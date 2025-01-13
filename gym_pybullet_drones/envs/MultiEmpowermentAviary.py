@@ -3,13 +3,14 @@ import numpy as np
 from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType
 
-class HoverAviary(BaseRLAviary):
-    """Single agent RL problem: hover at position."""
-
-    ################################################################################
+class MultiEmpowermentAviary(BaseRLAviary):
+    """ Multi-agent RL problem, learning how to reach a goal position. """
+    ####################################################################
     
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X,
+                 num_drones: int=2,
+                 neighbourhood_radius: float=np.inf,
                  initial_xyzs=None,
                  initial_rpys=None,
                  physics: Physics=Physics.PYB,
@@ -18,16 +19,20 @@ class HoverAviary(BaseRLAviary):
                  gui=False,
                  record=False,
                  obs: ObservationType=ObservationType.KIN,
-                 act: ActionType=ActionType.PID
+                 act: ActionType=ActionType.RPM
                  ):
-        """Initialization of a single agent RL environment.
+        """Initialization of a multi-agent RL environment.
 
-        Using the generic single agent RL superclass.
+        Using the generic multi-agent RL superclass.
 
         Parameters
         ----------
         drone_model : DroneModel, optional
             The desired drone type (detailed in an .urdf file in folder `assets`).
+        num_drones : int, optional
+            The desired number of drones in the aviary.
+        neighbourhood_radius : float, optional
+            Radius used to compute the drones' adjacency matrix, in meters.
         initial_xyzs: ndarray | None, optional
             (NUM_DRONES, 3)-shaped array containing the initial XYZ position of the drones.
         initial_rpys: ndarray | None, optional
@@ -48,10 +53,11 @@ class HoverAviary(BaseRLAviary):
             The type of action space (1 or 3D; RPMS, thurst and torques, or waypoint with PID control)
 
         """
-        self.TARGET_POS = np.array([1,1,1])
-        self.EPISODE_LEN_SEC = 10
+        self.TARGET_POS = np.array([2,2,2])
+        self.EPISODE_LEN_SEC = 8
         super().__init__(drone_model=drone_model,
-                         num_drones=1,
+                         num_drones=num_drones,
+                         neighbourhood_radius=neighbourhood_radius,
                          initial_xyzs=initial_xyzs,
                          initial_rpys=initial_rpys,
                          physics=physics,
@@ -62,70 +68,68 @@ class HoverAviary(BaseRLAviary):
                          obs=obs,
                          act=act
                          )
+        self.TARGET_POS = self.INIT_XYZS + np.array([[0,0,1/(i+1)] for i in range(num_drones)])
+        
+####################################################################
 
-    ################################################################################
-    
     def _computeReward(self):
-        """Computes the current reward value.
+        """Computes the reward at each episode step.
 
         Returns
         -------
         float
-            The reward.
+            The reward value.
 
         """
-        state = self._getDroneStateVector(0)
-        ret = np.linalg.norm(state[0:3]-self.TARGET_POS, axis=-1)
-        reward = np.exp(-ret)
-        # print("State: ", state[0:3])
-        # print("Target: ", self.TARGET_POS)
-        # print("Distance: ", ret)
-        # print("Reward: ", reward)
-        return reward
-
-    ################################################################################
+        # for each drone
+        states = np.array([self._getDroneStateVector(i) for i in range(self.NUM_DRONES)])
+        ret = 0
+        for i in range(self.NUM_DRONES):
+            ret += np.linalg.norm(self.TARGET_POS[i,:]-states[i][0:3])
+        return ret
     
+####################################################################
+
     def _computeTerminated(self):
-        """Computes the current done value.
+        """Computes the done value at each episode step.
 
         Returns
         -------
         bool
-            Whether the current episode is done.
+            Whether the episode is done.
 
         """
-        state = self._getDroneStateVector(0)
-        if np.linalg.norm(self.TARGET_POS-state[0:3]) < .0001:
-            print("Terminated because drone reached target")
+        states = np.array([self._getDroneStateVector(i) for i in range(self.NUM_DRONES)])
+        dist = 0
+        for i in range(self.NUM_DRONES):
+            dist += np.linalg.norm(self.TARGET_POS[i,:]-states[i][0:3])
+        if dist < .1:
             return True
         else:
             return False
-        # return False
         
-    ################################################################################
-    
+####################################################################
+
     def _computeTruncated(self):
-        """Computes the current truncated value.
+        """Computes the truncated value at each episode step.
 
         Returns
         -------
         bool
-            Whether the current episode timed out.
+            Whether the episode is timed out.
 
         """
-        state = self._getDroneStateVector(0)
-        if (abs(state[0]) > 1.5 or abs(state[1]) > 1.5 or state[2] > 2.0 # Truncate when the drone is too far away
-             or abs(state[7]) > .4 or abs(state[8]) > .4 # Truncate when the drone is too tilted
-        ):
-            print("Truncated because drone is too far away or tilted")
-            return True
-        if self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC:
-            print("Truncated because episode length exceeded")
+        
+        states = np.array([self._getDroneStateVector(i) for i in range(self.NUM_DRONES)])
+        for i in range(self.NUM_DRONES):
+            if (abs(states[i][7]) > .4 or abs(states[i][8]) > .4 ): # Truncate when a drone is too tilted
+                return True
+        if self.step_counter/self.CTRL_FREQ > self.EPISODE_LEN_SEC:
             return True
         else:
             return False
-
-    ################################################################################
+    
+ ################################################################################
     
     def _computeInfo(self):
         """Computes the current info dict(s).
