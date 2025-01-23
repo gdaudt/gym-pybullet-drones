@@ -94,4 +94,3 @@ dependencies:
       - tzdata==2024.2
       - xxhash==3.5.0
       - zipp==3.21.0
-prefix: /home/gd_admin/anaconda3/envs/pybullet-drones
