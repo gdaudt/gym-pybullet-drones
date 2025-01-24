@@ -24,7 +24,7 @@ import numpy as np
 import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
+from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold, BaseCallback, CallbackList
 from stable_baselines3.common.evaluation import evaluate_policy
 
 from gym_pybullet_drones.utils.Logger import Logger
@@ -43,8 +43,25 @@ DEFAULT_ACT = ActionType('vel') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 2
 DEFAULT_MA = False
 
-def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True):
+class CheckpointCallback(BaseCallback):
+    #### Callback for saving a model every n steps #############
+    def __init__(self, save_freq, save_path, verbose = 0):
+        super(CheckpointCallback, self).__init__(verbose)
+        self.save_freq = save_freq
+        self.save_path = save_path
+        os.makedirs(self.save_path, exist_ok=True)
+        
+    def _on_step(self) -> bool:
+        if self.n_calls % self.save_freq == 0:
+            checkpoint_file = os.path.join(self.save_path, f"model_step_{self.num_timesteps}.zip")
+            self_model = self.model.save(checkpoint_file)
+            if self.verbose > 0:
+                print(f"Saving model checkpoint to {checkpoint_file}")
+        return True
 
+def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, checkpoint=None):
+
+    #### if not resuming training from a checkpoint, create a new folder
     filename = os.path.join(output_folder, 'save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
@@ -68,17 +85,26 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     print('[INFO] Action space:', train_env.action_space)
     print('[INFO] Observation space:', train_env.observation_space)
 
+    if checkpoint and os.path.isfile(checkpoint):
+        print(f"[INFO] Resuming training from checkpoint {checkpoint}")
+        model = PPO.load(checkpoint, env=train_env)
+    else:
     #### Train the model #######################################
-    model = PPO('MlpPolicy',
-                train_env,
-                # tensorboard_log=filename+'/tb/',
-                verbose=1)
+        model = PPO('MlpPolicy',
+                    train_env,
+                    # tensorboard_log=filename+'/tb/',
+                    verbose=1)
 
+    checkpoint_path = os.path.join(filename, "checkpoints")
+    
     #### Target cumulative rewards (problem-dependent) ##########
     if DEFAULT_ACT == ActionType.ONE_D_RPM:
         target_reward = 474.15 if not multiagent else 949.5
     else:
         target_reward = 10000. if not multiagent else 920.
+        
+    #add checkpoint callback
+    checkpoint_callback = CheckpointCallback(save_freq=2000, save_path=checkpoint_path, verbose=1)
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward,
                                                      verbose=1)
     eval_callback = EvalCallback(eval_env,
@@ -89,8 +115,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                  eval_freq=int(1000),
                                  deterministic=True,
                                  render=False)
+    callback_list = CallbackList([checkpoint_callback, eval_callback])
+    
     model.learn(total_timesteps=int(1e6) if local else int(1e2), # shorter training in GitHub Actions pytest
-                callback=eval_callback,
+                callback=callback_list,
                 log_interval=100)
 
     #### Save the model ########################################
@@ -195,6 +223,8 @@ if __name__ == '__main__':
     parser.add_argument('--record_video',       default=DEFAULT_RECORD_VIDEO,  type=str2bool,      help='Whether to record a video (default: False)', metavar='')
     parser.add_argument('--output_folder',      default=DEFAULT_OUTPUT_FOLDER, type=str,           help='Folder where to save logs (default: "results")', metavar='')
     parser.add_argument('--colab',              default=DEFAULT_COLAB,         type=bool,          help='Whether example is being run by a notebook (default: "False")', metavar='')
+    # add checkpoint argument for resuming training
+    parser.add_argument('--checkpoint',         default=None,                  type=str,           help='Path to checkpoint file for resuming training', metavar='')
     ARGS = parser.parse_args()
 
     run(**vars(ARGS))
