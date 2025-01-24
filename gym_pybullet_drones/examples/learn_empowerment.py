@@ -59,12 +59,8 @@ class CheckpointCallback(BaseCallback):
                 print(f"Saving model checkpoint to {checkpoint_file}")
         return True
 
-def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, checkpoint=None):
+def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, checkpoint=None, checkpoint_folder=None):
 
-    #### if not resuming training from a checkpoint, create a new folder
-    filename = os.path.join(output_folder, 'save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
-    if not os.path.exists(filename):
-        os.makedirs(filename+'/')
 
     if not multiagent:
         train_env = make_vec_env(EmpowermentAviary,
@@ -85,9 +81,20 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     print('[INFO] Action space:', train_env.action_space)
     print('[INFO] Observation space:', train_env.observation_space)
 
-    if checkpoint and os.path.isfile(checkpoint):
+    #### if not resuming training from a checkpoint, create a new folder
+    if checkpoint and checkpoint_folder:
+        filename = checkpoint_folder
+    else:
+        filename = os.path.join(output_folder, 'save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+    if not os.path.exists(filename):
+        os.makedirs(filename+'/')
+    
+    print("Filename: ", filename)
+        
+    if checkpoint and os.path.isfile(os.path.join(filename, checkpoint)):
         print(f"[INFO] Resuming training from checkpoint {checkpoint}")
-        model = PPO.load(checkpoint, env=train_env)
+        model = PPO.load(checkpoint, train_env, verbose=1)
+        print("testing if this goes beyond load")
     else:
     #### Train the model #######################################
         model = PPO('MlpPolicy',
@@ -117,7 +124,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                  render=False)
     callback_list = CallbackList([checkpoint_callback, eval_callback])
     
-    model.learn(total_timesteps=int(1e6) if local else int(1e2), # shorter training in GitHub Actions pytest
+    model.learn(total_timesteps=int(3e3) if local else int(1e2), # shorter training in GitHub Actions pytest
                 callback=callback_list,
                 log_interval=100)
 
@@ -223,8 +230,10 @@ if __name__ == '__main__':
     parser.add_argument('--record_video',       default=DEFAULT_RECORD_VIDEO,  type=str2bool,      help='Whether to record a video (default: False)', metavar='')
     parser.add_argument('--output_folder',      default=DEFAULT_OUTPUT_FOLDER, type=str,           help='Folder where to save logs (default: "results")', metavar='')
     parser.add_argument('--colab',              default=DEFAULT_COLAB,         type=bool,          help='Whether example is being run by a notebook (default: "False")', metavar='')
+    # add argument for the checkpoint folder path to load info
+    parser.add_argument('--checkpoint_folder',  default=None,                  type=str,           help='Path to checkpoint folder for resuming training', metavar='')
     # add checkpoint argument for resuming training
-    parser.add_argument('--checkpoint',         default=None,                  type=str,           help='Path to checkpoint file for resuming training', metavar='')
+    parser.add_argument('--checkpoint',         default=None,                  type=str,           help='Path to checkpoint file for resuming training from the checkpoint_folder', metavar='')
     ARGS = parser.parse_args()
 
     run(**vars(ARGS))
