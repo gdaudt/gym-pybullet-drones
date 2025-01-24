@@ -59,7 +59,7 @@ class CheckpointCallback(BaseCallback):
                 print(f"Saving model checkpoint to {checkpoint_file}")
         return True
 
-def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, checkpoint=None, checkpoint_folder=None):
+def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, checkpoint=None, checkpoint_folder=None, filename=None):
 
 
     if not multiagent:
@@ -84,6 +84,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #### if not resuming training from a checkpoint, create a new folder
     if checkpoint and checkpoint_folder:
         filename = checkpoint_folder
+    elif filename:
+        # save the model as save-+datetime.now().strftime("%m.%d.%Y_%H.%M.%S") + filename
+        filename = os.path.join(output_folder, 'save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+'-'+filename)       
     else:
         filename = os.path.join(output_folder, 'save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
@@ -234,6 +237,8 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_folder',  default=None,                  type=str,           help='Path to checkpoint folder for resuming training', metavar='')
     # add checkpoint argument for resuming training
     parser.add_argument('--checkpoint',         default=None,                  type=str,           help='Path to checkpoint file for resuming training from the checkpoint_folder', metavar='')
+    # add argument for name of file to save the model
+    parser.add_argument('--filename',           default=None,                  type=str,           help='Name of the file to save the model', metavar='')
     ARGS = parser.parse_args()
 
     run(**vars(ARGS))

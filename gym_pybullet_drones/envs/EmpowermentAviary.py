@@ -53,7 +53,7 @@ class EmpowermentAviary(BaseRLAviary):
 
         """
         self.TARGET_POS = np.array([3,2,1])
-        self.EPISODE_LEN_SEC = 20
+        self.EPISODE_LEN_SEC = 30
         self.OBSTACLES = []
         self.LIDAR_DATA = []
         self.rayMissColor = [0, 1, 0]
@@ -76,9 +76,9 @@ class EmpowermentAviary(BaseRLAviary):
         # end time of the trajectory
         self.T_END = 1
         # number of points in the trajectory
-        self.N_POINTS = 500
+        self.N_POINTS = 1000
         #number of trajectories sampled
-        self.N_TRAJECTORIES = 50
+        self.N_TRAJECTORIES = 100
         self.T_SPACED = np.linspace(0, self.T_END, self.N_POINTS)
         
         
