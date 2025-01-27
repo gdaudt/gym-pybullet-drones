@@ -105,7 +105,7 @@ class EmpowermentAviary(BaseRLAviary):
         # obstacle2pos = [.5, 1, .5]
         # obstacle3pos = [.5, 2, .5]
         # obstacle4pos = [-1, 2, .5]
-        obstacles= ([[0, 1.5, 1], [3, 0, 1], [3, 2.5, 1], [1, 2.5, 1]])
+        obstacles= ([[0, 1.8, 1], [3, 0, 1], [3, 3, 1], [1, 3, 1]])
         xoffset = 1
         yoffset = 0.5
         zoffset = 1
