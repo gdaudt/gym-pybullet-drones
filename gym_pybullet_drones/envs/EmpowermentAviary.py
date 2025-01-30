@@ -1,5 +1,6 @@
 import numpy as np
 import pybullet as p
+import pybullet_utils
 
 
 from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
@@ -52,8 +53,8 @@ class EmpowermentAviary(BaseRLAviary):
             The type of action space (1 or 3D; RPMS, thurst and torques, or waypoint with PID control)
 
         """
-        self.TARGET_POS = np.array([3,2,1])
-        self.EPISODE_LEN_SEC = 30
+        self.TARGET_POS = np.array([3,3,1.5])
+        self.EPISODE_LEN_SEC = 40
         self.OBSTACLES = []
         self.LIDAR_DATA = []
         self.rayMissColor = [0, 1, 0]
@@ -66,6 +67,7 @@ class EmpowermentAviary(BaseRLAviary):
         self.replaceLines = False   
         self.createObstacleLookup = True
         self.obstacleLookup = {}
+        self.ndeg = np.pi/2
         
         # constants for trajectory sampling
         self.MASS = 0.027 # from the CF2X model urdf file
@@ -76,9 +78,9 @@ class EmpowermentAviary(BaseRLAviary):
         # end time of the trajectory
         self.T_END = 1
         # number of points in the trajectory
-        self.N_POINTS = 1000
+        self.N_POINTS = 500
         #number of trajectories sampled
-        self.N_TRAJECTORIES = 100
+        self.N_TRAJECTORIES = 50
         self.T_SPACED = np.linspace(0, self.T_END, self.N_POINTS)
         
         
@@ -100,39 +102,42 @@ class EmpowermentAviary(BaseRLAviary):
     #add obstacles to the environment
     def _addObstacles(self):
         
-        # for spawning the obstacles, the x, y, z coordinates are the center of the object. for some reason x is spawning with 1 length and y with 0.5 length
+       
         # obstacle1pos = [-1, -1, .5]
         # obstacle2pos = [.5, 1, .5]
         # obstacle3pos = [.5, 2, .5]
         # obstacle4pos = [-1, 2, .5]
-        obstacles= ([[0, 1.8, 1], [3, 0, 1], [3, 3, 1], [1, 3, 1]])
-        xoffset = 1
-        yoffset = 0.5
+        #[up+-down, left+-right, z]
+        z = 1.05
+        o = 0
+        obstacles= ([[1, 1, z], [2, 1, z], [1, 0, z], [2, 0, z], [1, -2, z], [2, -2, z]])
+        xoffset = 0.5
+        yoffset = 0.25
         zoffset = 1
         #spawn a small object at the target position
-        # target_id = p.loadURDF("sphere_small.urdf",
+        # target_id = p.loadURDF("cube_small.urdf",                               
         #                        self.TARGET_POS,
         #                         p.getQuaternionFromEuler([0, 0, 0]),
         #                        )
         for obstaclePosition in obstacles:
-            obstacle_id = p.loadURDF("cube_no_rotation.urdf",
-                       obstaclePosition,
-                       p.getQuaternionFromEuler([0, 0, 0]),
+            obstacle_id = p.loadURDF("cube_small.urdf",
+                       obstaclePosition[0:3],
+                       p.getQuaternionFromEuler([0, 0, o]),
                        physicsClientId=self.CLIENT
-                       )              
+                       )
+                      
             if(self.createObstacleLookup):
                 # for each obstacle, store the min and max corners for AABB collision detection, indexed by the object id
                 # in each obstacle, min corner is coordinates x+xoffset, y+yoffset, z-zoffset, and max corner is x-xoffset, y-yoffset, z+zoffset
                 # add the min an max corners to the obstacleLookup dictionary
                 self.obstacleLookup[obstacle_id] = [[obstaclePosition[0]+xoffset, obstaclePosition[1]+yoffset, obstaclePosition[2]-zoffset], [obstaclePosition[0]-xoffset, obstaclePosition[1]-yoffset, obstaclePosition[2]+zoffset], obstaclePosition]
-                print("Obstacle: ", self.obstacleLookup[obstacle_id])            
+                print("Obstacle: ", obstacle_id, " positions: ", self.obstacleLookup[obstacle_id])            
         self.createObstacleLookup = False
 ####################################################################
 
     # override the reset method to spawn obstacles
     def reset(self, seed = None, options = None):
-        initial_obs, initial_info = super().reset(seed, options)
-        self._addObstacles()
+        initial_obs, initial_info = super().reset(seed, options)        
         self.reset_lidar()
         return initial_obs, initial_info
 
@@ -222,6 +227,7 @@ class EmpowermentAviary(BaseRLAviary):
         # print("current position: ", state[0:3])
         # print("current empowerment: ", empowerment)
         return reward * empowerment
+        #return reward
 
 ####################################################################
 
@@ -266,11 +272,12 @@ class EmpowermentAviary(BaseRLAviary):
         #check if the final position is inside an obstacle
         for obstacle_id in self.obstacleLookup:
             #if distance between object is too big, continue
-            if np.linalg.norm(self.obstacleLookup[obstacle_id][2]-final_pos) > 1.5:
+            if np.linalg.norm(self.obstacleLookup[obstacle_id][2]-final_pos) > 2:
                 continue
             min_corner = self.obstacleLookup[obstacle_id][0]
             max_corner = self.obstacleLookup[obstacle_id][1]
             # if the final position is inside the obstacle or on ground (z<=0), return True
+            # print all corners and the final position          
             if (min_corner[0] <= final_pos[0] <= max_corner[0] and
                 min_corner[1] <= final_pos[1] <= max_corner[1] and
                 min_corner[2] <= final_pos[2] <= max_corner[2]) or final_pos[2] <= 0:
@@ -302,8 +309,7 @@ class EmpowermentAviary(BaseRLAviary):
             #print("Number of trajectories safe: ", final_points.shape[0])
             return empowerment        
         return 0.0
-
-
+     
 ####################################################################
 
     def _computeTerminated(self):
@@ -314,8 +320,21 @@ class EmpowermentAviary(BaseRLAviary):
         bool
             Whether the current episode is done.
 
-        """
-        state = self._getDroneStateVector(0)
+        """    
+
+        state = self._getDroneStateVector(0)       
+        
+        p.performCollisionDetection()
+        #check if the final position is inside an obstacle
+        for obstacle_id in self.obstacleLookup:
+            contact_points = p.getContactPoints(bodyA=self.DRONE_IDS[0], bodyB=obstacle_id, physicsClientId=self.CLIENT)
+            #check if contact points are not empty and if the contact force is more than 0. Only terminate if drone collides when non-stationary to avoid false positives
+            if len(contact_points) > 0:
+                for contact in contact_points:
+                    if contact[9] > 0:                       
+                        print("Terminated due to collision with obstacle ", obstacle_id)
+                        return True        
+        
         if np.linalg.norm(self.TARGET_POS-state[0:3]) < .0001:
             print("Terminated because drone reached target")
             return True
@@ -335,7 +354,7 @@ class EmpowermentAviary(BaseRLAviary):
 
         """
         state = self._getDroneStateVector(0)
-        if (abs(state[0]) > 4 or abs(state[1]) > 4 or state[2] > 2.0 # Truncate when the drone is too far away
+        if (abs(state[0]) > 5 or abs(state[1]) > 5 or state[2] > 3.0 # Truncate when the drone is too far away
              or abs(state[7]) > .4 or abs(state[8]) > .4 # Truncate when the drone is too tilted
         ):
             print("Truncated because drone is too far away or tilted")

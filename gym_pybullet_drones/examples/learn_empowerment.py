@@ -127,7 +127,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                  render=False)
     callback_list = CallbackList([checkpoint_callback, eval_callback])
     
-    model.learn(total_timesteps=int(1e6) if local else int(1e2), # shorter training in GitHub Actions pytest
+    model.learn(total_timesteps=int(5e5) if local else int(1e2), # shorter training in GitHub Actions pytest
                 callback=callback_list,
                 log_interval=100)
 
