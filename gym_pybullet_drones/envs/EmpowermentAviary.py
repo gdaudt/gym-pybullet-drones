@@ -69,16 +69,21 @@ class EmpowermentAviary(BaseRLAviary):
         self.obstacleLookup = {}
         self.ndeg = np.pi/2
         
+        # mode of trajectory sampling
+        # 1 = chebyshev integrator, 2 = fourier series
+        self.SAMPLING = 2
         # constants for trajectory sampling
         self.MASS = 0.027 # from the CF2X model urdf file
         # gravity force added to the maximum thrust force, taken from the CF2X model urdf file
         self.F_MAX = 0.027 * 9.81 + 0.027 * 8.33 # from max speed being 30 km/h over 1s
-        # number of chebychev basisfunctions
-        self.N = 10
+        # number of chebychev basisfunctions or fourier series terms
+        self.N = 5
         # end time of the trajectory
         self.T_END = 1
+        # omega for fourier series
+        self.omega = 2*np.pi / self.T_END
         # number of points in the trajectory
-        self.N_POINTS = 500
+        self.N_POINTS = 100
         #number of trajectories sampled
         self.N_TRAJECTORIES = 50
         self.T_SPACED = np.linspace(0, self.T_END, self.N_POINTS)
@@ -136,10 +141,10 @@ class EmpowermentAviary(BaseRLAviary):
 ####################################################################
 
     # override the reset method to spawn obstacles
-    def reset(self, seed = None, options = None):
-        initial_obs, initial_info = super().reset(seed, options)        
-        self.reset_lidar()
-        return initial_obs, initial_info
+    # def reset(self, seed = None, options = None):
+    #     initial_obs, initial_info = super().reset(seed, options)        
+    #     self.reset_lidar()
+    #     return initial_obs, initial_info
 
 ####################################################################
 
@@ -235,28 +240,61 @@ class EmpowermentAviary(BaseRLAviary):
     # returns an array with the x, y, z positions of the final point of the trajectory
     def _computeTrajectory(self, state):
        
-        F_x = self.F_MAX/4*np.polynomial.chebyshev.Chebyshev(coef=(2*np.random.uniform(size=self.N)-1)/(self.N/3), domain=[0, self.T_END], window=[-1, 1])
-        F_y = self.F_MAX/4*np.polynomial.chebyshev.Chebyshev(coef=(2*np.random.uniform(size=self.N)-1)/(self.N/3), domain=[0, self.T_END], window=[-1, 1])
-        F_z = self.F_MAX/4*np.polynomial.chebyshev.Chebyshev(coef=(2*np.random.uniform(size=self.N)-1)/(self.N/3), domain=[0, self.T_END], window=[-1, 1])
-        #compute acceleration
-        a_x = F_x(self.T_SPACED)/self.MASS
-        a_y = F_y(self.T_SPACED)/self.MASS
-        a_z = F_z(self.T_SPACED)/self.MASS
-        # integrate acceleration to get velocity, adding it to the current velocity
-        # cur_pos=state[0:3],
-        # cur_quat=state[3:7],
-        # cur_vel=state[10:13],
-        # cur_ang_vel=state[13:16]
-        v_x = state[10] + cumulative_trapezoid(a_x, self.T_SPACED, initial=0)
-        v_y = state[11] + cumulative_trapezoid(a_y, self.T_SPACED, initial=0)
-        v_z = state[12] + cumulative_trapezoid(a_z, self.T_SPACED, initial=0)
-        # integrate velocity to get position, adding it to the current position
-        x = state[0] + cumulative_trapezoid(v_x, self.T_SPACED, initial=0)
-        y = state[1] + cumulative_trapezoid(v_y, self.T_SPACED, initial=0)
-        z = state[2] + cumulative_trapezoid(v_z, self.T_SPACED, initial=0)
+       
+        if self.SAMPLING == 1:
+            F_x = self.F_MAX/4*np.polynomial.chebyshev.Chebyshev(coef=(2*np.random.uniform(size=self.N)-1)/(self.N/3), domain=[0, self.T_END], window=[-1, 1])
+            F_y = self.F_MAX/4*np.polynomial.chebyshev.Chebyshev(coef=(2*np.random.uniform(size=self.N)-1)/(self.N/3), domain=[0, self.T_END], window=[-1, 1])
+            F_z = self.F_MAX/4*np.polynomial.chebyshev.Chebyshev(coef=(2*np.random.uniform(size=self.N)-1)/(self.N/3), domain=[0, self.T_END], window=[-1, 1])
+            #compute acceleration
+            a_x = F_x(self.T_SPACED)/self.MASS
+            a_y = F_y(self.T_SPACED)/self.MASS
+            a_z = F_z(self.T_SPACED)/self.MASS
+            # integrate acceleration to get velocity, adding it to the current velocity
+            # cur_pos=state[0:3],
+            # cur_quat=state[3:7],
+            # cur_vel=state[10:13],
+            # cur_ang_vel=state[13:16]
+            v_x = state[10] + cumulative_trapezoid(a_x, self.T_SPACED, initial=0)
+            v_y = state[11] + cumulative_trapezoid(a_y, self.T_SPACED, initial=0)
+            v_z = state[12] + cumulative_trapezoid(a_z, self.T_SPACED, initial=0)
+            # integrate velocity to get position, adding it to the current position
+            x = state[0] + cumulative_trapezoid(v_x, self.T_SPACED, initial=0)
+            y = state[1] + cumulative_trapezoid(v_y, self.T_SPACED, initial=0)
+            z = state[2] + cumulative_trapezoid(v_z, self.T_SPACED, initial=0)
+            
+            #print("Final position: ", [x[-1], y[-1], z[-1]])
+            return np.array([x[-1], y[-1], z[-1]])
         
-        #print("Final position: ", [x[-1], y[-1], z[-1]])
-        return np.array([x[-1], y[-1], z[-1]])
+        elif self.SAMPLING == 2:
+            # Random Fourier coefficients within force limits
+            A_x = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+            B_x = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+            A_y = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+            B_y = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+            A_z = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+            B_z = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+            
+            # Compute acceleration as a Fourier series
+            a_x = np.sum([A_x[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_x[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
+            a_y = np.sum([A_y[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_y[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
+            a_z = np.sum([A_z[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_z[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
+            
+            # Integrate acceleration to get velocity
+            v_x = state[10] + np.cumsum(a_x) * (self.T_END / self.N_POINTS)
+            v_y = state[11] + np.cumsum(a_y) * (self.T_END / self.N_POINTS)
+            v_z = state[12] + np.cumsum(a_z) * (self.T_END / self.N_POINTS)
+
+            # Integrate velocity to get position
+            x = state[0] + np.cumsum(v_x) * (self.T_END / self.N_POINTS)
+            y = state[1] + np.cumsum(v_y) * (self.T_END / self.N_POINTS)
+            z = state[2] + np.cumsum(v_z) * (self.T_END / self.N_POINTS)
+            
+            return np.array([x[-1], y[-1], z[-1]])
+        
+        else:
+            print("Wrong sampling mode chosen")
+            
+        return np.array([0, 0, 0])
 
 ####################################################################
 
@@ -269,6 +307,10 @@ class EmpowermentAviary(BaseRLAviary):
             Whether the current episode is done.
 
         """
+        if(final_pos[2] >= 2 or final_pos[2] <= 0):
+                #print("Collision with ground or ceiling")
+                return True
+        
         #check if the final position is inside an obstacle
         for obstacle_id in self.obstacleLookup:
             #if distance between object is too big, continue
@@ -278,9 +320,12 @@ class EmpowermentAviary(BaseRLAviary):
             max_corner = self.obstacleLookup[obstacle_id][1]
             # if the final position is inside the obstacle or on ground (z<=0), return True
             # print all corners and the final position          
+            # add artificial collision to ceiling at z = 2
+            
             if (min_corner[0] <= final_pos[0] <= max_corner[0] and
                 min_corner[1] <= final_pos[1] <= max_corner[1] and
-                min_corner[2] <= final_pos[2] <= max_corner[2]) or final_pos[2] <= 0:
+                min_corner[2] <= final_pos[2] <= max_corner[2]):
+                
                 #print("Collision with obstacle")
                 return True
         return False
@@ -306,7 +351,7 @@ class EmpowermentAviary(BaseRLAviary):
             hull = ConvexHull(final_points)
             empowerment = np.log(hull.volume)
             #print how many trajectories did not collide
-            #print("Number of trajectories safe: ", final_points.shape[0])
+            # print("Number of trajectories safe: ", final_points.shape[0])
             return empowerment        
         return 0.0
      

@@ -40,7 +40,7 @@ DEFAULT_COLAB = False
 
 DEFAULT_OBS = ObservationType('kin') # 'kin' or 'rgb', kin observation space is Kinematic information (pose, linear and angular velocities)
 DEFAULT_ACT = ActionType('vel') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
-DEFAULT_AGENTS = 2
+DEFAULT_AGENTS = 2  
 DEFAULT_MA = False
 
 class CheckpointCallback(BaseCallback):
