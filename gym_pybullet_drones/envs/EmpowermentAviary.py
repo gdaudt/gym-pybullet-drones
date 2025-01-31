@@ -347,7 +347,9 @@ class EmpowermentAviary(BaseRLAviary):
                     final_points = np.array([computed_trajectory])
                 else:
                     final_points = np.vstack((final_points, computed_trajectory))
-        if(final_points is not None):
+        
+        # if final_points have enough points to compute a convex hull (at least 4), compute the empowerment
+        if final_points is not None and final_points.shape[0] > 3:
             hull = ConvexHull(final_points)
             empowerment = np.log(hull.volume)
             #print how many trajectories did not collide
