@@ -53,7 +53,7 @@ class EmpowermentAviary(BaseRLAviary):
             The type of action space (1 or 3D; RPMS, thurst and torques, or waypoint with PID control)
 
         """
-        self.TARGET_POS = np.array([3,3,1.5])
+        self.TARGET_POS = np.array([3, 0, 1])
         self.EPISODE_LEN_SEC = 40
         self.OBSTACLES = []
         self.LIDAR_DATA = []
@@ -231,7 +231,7 @@ class EmpowermentAviary(BaseRLAviary):
         # print("current velocity: ", state[10:13])
         # print("current position: ", state[0:3])
         # print("current empowerment: ", empowerment)
-        return reward * empowerment
+        return (reward*2) * (empowerment)
         #return reward
 
 ####################################################################
