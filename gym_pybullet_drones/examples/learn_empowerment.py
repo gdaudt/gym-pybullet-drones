@@ -38,8 +38,8 @@ DEFAULT_RECORD_VIDEO = False
 DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
 
-DEFAULT_OBS = ObservationType('kin') # 'kin' or 'rgb', kin observation space is Kinematic information (pose, linear and angular velocities)
-DEFAULT_ACT = ActionType('vel') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
+DEFAULT_OBS = ObservationType('kin_lidar') # 'kin' or 'rgb' or 'kin_lidar', kin observation space is Kinematic information (pose, linear and angular velocities) and kin_lidar is Kinematic information and LIDAR data
+DEFAULT_ACT = ActionType('pid') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
 DEFAULT_AGENTS = 2  
 DEFAULT_MA = False
 
@@ -64,7 +64,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
 
     if not multiagent:
         train_env = make_vec_env(EmpowermentAviary,
-                                 env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT),
+                                 env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT, gui=gui),
                                  n_envs=1,
                                  seed=0
                                  )
@@ -193,7 +193,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         obs2 = obs.squeeze()
         act2 = action.squeeze()
         print("Obs:", obs, "\tAction", action, "\tReward:", reward, "\tTerminated:", terminated, "\tTruncated:", truncated)
-        if DEFAULT_OBS == ObservationType.KIN:
+        if DEFAULT_OBS == ObservationType.KIN or DEFAULT_OBS == ObservationType.KINLID:
             if not multiagent:
                 logger.log(drone=0,
                     timestamp=i/test_env.CTRL_FREQ,

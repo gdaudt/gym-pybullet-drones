@@ -20,8 +20,11 @@ class EmpowermentAviary(BaseRLAviary):
                  ctrl_freq: int = 30,
                  gui=False,
                  record=False,
-                 obs: ObservationType=ObservationType.KIN,
-                 act: ActionType=ActionType.PID
+                 obs: ObservationType=ObservationType.KINLID,
+                 act: ActionType=ActionType.PID,
+                 numrays: int = 36,
+                 lidar_angle: float = 2*np.pi,
+                 max_range: float = 3.0
                  ):
         """Initialization of a single or multi-agent RL environment.
 
@@ -57,6 +60,7 @@ class EmpowermentAviary(BaseRLAviary):
         self.EPISODE_LEN_SEC = 40
         self.OBSTACLES = []
         self.LIDAR_DATA = []
+        self.OBSERVATION_TYPE = obs
         self.rayMissColor = [0, 1, 0]
         self.rayHitColor = [1, 0, 0]
         self.rayFrom = []
@@ -69,6 +73,10 @@ class EmpowermentAviary(BaseRLAviary):
         self.obstacleLookup = {}
         self.ndeg = np.pi/2
         
+        self.LIDAR_NUM_RAYS = numrays
+        self.LIDAR_ANGLE = lidar_angle
+        self.LIDAR_MAX_RANGE = max_range
+        
         # mode of trajectory sampling
         # 1 = chebyshev integrator, 2 = fourier series
         self.SAMPLING = 2
@@ -77,7 +85,7 @@ class EmpowermentAviary(BaseRLAviary):
         # gravity force added to the maximum thrust force, taken from the CF2X model urdf file
         self.F_MAX = 0.027 * 9.81 + 0.027 * 8.33 # from max speed being 30 km/h over 1s
         # number of chebychev basisfunctions or fourier series terms
-        self.N = 5
+        self.N = 10
         # end time of the trajectory
         self.T_END = 1
         # omega for fourier series
@@ -208,6 +216,9 @@ class EmpowermentAviary(BaseRLAviary):
     #extend the step function to simulate the lidar sensor
     def step(self, action):
         obs, reward, terminated, truncated, info = super().step(action)
+        # if self.OBSERVATION_TYPE == ObservationType.KINLID:
+        #     #print only lidar information from observation
+        #     print("LIDAR DATA: ", obs[0][57:])
         # save simulate lider for later
         #self.simulateLidar()
         return obs, reward, terminated, truncated, info
@@ -231,7 +242,7 @@ class EmpowermentAviary(BaseRLAviary):
         # print("current velocity: ", state[10:13])
         # print("current position: ", state[0:3])
         # print("current empowerment: ", empowerment)
-        return (reward*2) * (empowerment)
+        return (reward*1.5) * (empowerment)
         #return reward
 
 ####################################################################
@@ -402,7 +413,7 @@ class EmpowermentAviary(BaseRLAviary):
         """
         state = self._getDroneStateVector(0)
         if (abs(state[0]) > 5 or abs(state[1]) > 5 or state[2] > 3.0 # Truncate when the drone is too far away
-             or abs(state[7]) > .4 or abs(state[8]) > .4 # Truncate when the drone is too tilted
+             or abs(state[7]) > .9 or abs(state[8]) > .9 # Truncate when the drone is too tilted
         ):
             print("Truncated because drone is too far away or tilted")
             return True

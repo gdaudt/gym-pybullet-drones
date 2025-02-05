@@ -25,7 +25,10 @@ class BaseRLAviary(BaseAviary):
                  gui=False,
                  record=False,
                  obs: ObservationType=ObservationType.KIN,
-                 act: ActionType=ActionType.RPM
+                 act: ActionType=ActionType.RPM,
+                 numrays: int = 36,
+                 lidar_angle: float = 2*np.pi,
+                 max_range:  float = 3.0
                  ):
         """Initialization of a generic single and multi-agent RL environment.
 
@@ -93,6 +96,11 @@ class BaseRLAviary(BaseAviary):
         #### Set a limit on the maximum target speed ###############
         if act == ActionType.VEL:
             self.SPEED_LIMIT = 0.03 * self.MAX_SPEED_KMH * (1000/3600)
+            
+        if obs == ObservationType.KINLID:
+            self.LIDAR_NUM_RAYS = numrays
+            self.LIDAR_MAX_RANGE = max_range
+            self.HORIZONTAL_ANGLE = lidar_angle
 
     ################################################################################
 
@@ -239,6 +247,60 @@ class BaseRLAviary(BaseAviary):
         return rpm
 
     ################################################################################
+    
+    def _computeLidar(self, drone_idx):
+        """
+        Computes LiDAR distances for the drone at index `drone_idx`.
+        Shoots rays in the horizontal plane (z constant) evenly spread over 360°.
+        Filters out any hits on the drone itself.
+        Returns:
+            distances: numpy array of shape (self.LIDAR_NUM_RAYS,)
+        """
+        # Get the drone’s current state
+        state = self._getDroneStateVector(drone_idx)
+        drone_pos = state[0:3]  # (x, y, z)
+        
+        # For simplicity, we cast rays in the horizontal plane (keeping z constant)
+        num_rays = self.LIDAR_NUM_RAYS
+        max_range = self.LIDAR_MAX_RANGE
+        # Generate ray angles evenly spaced [0, lidar angle parameter) in radians
+        angles = np.linspace(0, self.HORIZONTAL_ANGLE, num_rays, endpoint=False)
+        
+        # The start position is the drone’s center repeated for each ray.
+        start_positions = np.tile(drone_pos, (num_rays, 1))
+        end_positions = []
+        for angle in angles:
+            # Compute endpoint in horizontal plane.
+            end_x = drone_pos[0] + max_range * np.cos(angle)
+            end_y = drone_pos[1] + max_range * np.sin(angle)
+            end_z = drone_pos[2]  # same height as drone
+            end_positions.append([end_x, end_y, end_z])
+        end_positions = np.array(end_positions)
+        
+        # Perform the batch ray test. We assume self.CLIENT holds the pybullet client id.
+        results = p.rayTestBatch(start_positions, end_positions, physicsClientId=self.CLIENT)
+        
+        # Filter the results: if a ray hits the drone itself or hits nothing, we set distance to max_range.
+        distances = []
+        # Assume the drone's unique ID is in self.DRONE_IDS[drone_idx]
+        for res in results:
+            hit_id = res[0]         # the unique id of the object hit
+            hit_fraction = res[2]   # fraction (0 to 1) along the ray where hit occurred
+            
+            # If the ray hit nothing (hit_id == -1) or hit the drone itself, use max_range.
+            if hit_id == -1 or hit_id == self.DRONE_IDS[drone_idx]:
+                distances.append(max_range)
+            else:
+                distances.append(hit_fraction * max_range)
+        # if rendering is enabled, draw the rays
+        # if self.GUI:
+        #     for i in range(num_rays):
+        #         p.addUserDebugLine(start_positions[i], end_positions[i], [1, 0, 0], parentObjectUniqueId=self.DRONE_IDS[drone_idx], lifeTime=self.PYB_TIMESTEP)
+        return np.array(distances)
+
+    ################################################################################
+
+    ################################################################################
 
     def _observationSpace(self):
         """Returns the observation space of the environment.
@@ -274,8 +336,37 @@ class BaseRLAviary(BaseAviary):
                 elif self.ACT_TYPE in [ActionType.ONE_D_RPM, ActionType.ONE_D_PID]:
                     obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo] for i in range(self.NUM_DRONES)])])
                     obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi] for i in range(self.NUM_DRONES)])])
-            return spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)
+            return spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)           
+        elif self.OBS_TYPE == ObservationType.KINLID:
             ############################################################
+            #### OBS SPACE OF SIZE 12
+            #### Observation vector ### X        Y        Z       Q1   Q2   Q3   Q4   R       P       Y       VX       VY       VZ       WX       WY       WZ
+            lo = -np.inf
+            hi = np.inf
+            obs_lower_bound = np.array([[lo,lo,0, lo,lo,lo,lo,lo,lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
+            obs_upper_bound = np.array([[hi,hi,hi,hi,hi,hi,hi,hi,hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
+            #### Add action buffer to observation space ################
+            act_lo = -1
+            act_hi = +1
+            for i in range(self.ACTION_BUFFER_SIZE):
+                if self.ACT_TYPE in [ActionType.RPM, ActionType.VEL]:
+                    obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo,act_lo,act_lo,act_lo] for i in range(self.NUM_DRONES)])])
+                    obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi,act_hi,act_hi,act_hi] for i in range(self.NUM_DRONES)])])
+                elif self.ACT_TYPE==ActionType.PID:
+                    obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo,act_lo,act_lo] for i in range(self.NUM_DRONES)])])
+                    obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi,act_hi,act_hi] for i in range(self.NUM_DRONES)])])
+                elif self.ACT_TYPE in [ActionType.ONE_D_RPM, ActionType.ONE_D_PID]:
+                    obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo] for i in range(self.NUM_DRONES)])])
+                    obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi] for i in range(self.NUM_DRONES)])])
+            #### Add LIDAR data to observation space ###################
+            num_rays = self.LIDAR_NUM_RAYS
+            lidar_lower = np.zeros((self.NUM_DRONES, num_rays))
+            lidar_upper = np.ones((self.NUM_DRONES, num_rays)) * self.LIDAR_MAX_RANGE
+            obs_lower_bound = np.hstack([obs_lower_bound, lidar_lower])
+            obs_upper_bound = np.hstack([obs_upper_bound, lidar_upper])
+            
+            return spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)
+        
         else:
             print("[ERROR] in BaseRLAviary._observationSpace()")
     
@@ -318,5 +409,26 @@ class BaseRLAviary(BaseAviary):
                 ret = np.hstack([ret, np.array([self.action_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
             return ret
             ############################################################
+        elif self.OBS_TYPE == ObservationType.KINLID:
+            # Start with the same kinematic observation as KIN.
+            obs_12 = np.zeros((self.NUM_DRONES, 12))
+            for i in range(self.NUM_DRONES):
+                obs = self._getDroneStateVector(i)
+                obs_12[i, :] = np.hstack([obs[0:3], obs[7:10], obs[10:13], obs[13:16]]).reshape(12,)
+            ret = np.array([obs_12[i, :] for i in range(self.NUM_DRONES)]).astype('float32')
+            for i in range(self.ACTION_BUFFER_SIZE):
+                ret = np.hstack([ret, np.array([self.action_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
+            
+            # Now compute LiDAR data for each drone and hstack it.
+            lidar_all = []
+            for i in range(self.NUM_DRONES):
+                lidar_i = self._computeLidar(i)  # shape (self.LIDAR_NUM_RAYS,)
+                lidar_all.append(lidar_i)
+            # Convert to (NUM_DRONES, LIDAR_NUM_RAYS)
+            lidar_all = np.array(lidar_all)
+            
+            # Finally, stack LiDAR data to the observation vector along the last axis.
+            ret = np.hstack([ret, lidar_all])
+            return ret
         else:
             print("[ERROR] in BaseRLAviary._computeObs()")
