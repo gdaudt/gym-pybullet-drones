@@ -22,7 +22,7 @@ DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
 
 DEFAULT_OBS = ObservationType('kin') # 'kin' or 'rgb', kin observation space is Kinematic information (pose, linear and angular velocities)
-DEFAULT_ACT = ActionType('vel') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
+DEFAULT_ACT = ActionType('two_d_pid') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid' or 'two_d_pid'
 DEFAULT_AGENTS = 2
 DEFAULT_MA = False
 
@@ -64,14 +64,17 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                 output_folder=output_folder,
                 colab=colab
                 )
-
+    #print the shape of the observation space for debugging
+    #print("Observation space shape: ", test_env.observation_space.shape)
+    
     mean_reward, std_reward = evaluate_policy(model,
                                               test_env_nogui,
-                                              n_eval_episodes=10
+                                              n_eval_episodes=2
                                               )
     print("\n\n\nMean reward ", mean_reward, " +- ", std_reward, "\n\n")
-
+    
     obs, info = test_env.reset(seed=42, options={})
+    #print obs for debugging
     start = time.time()
     for i in range((test_env.EPISODE_LEN_SEC+2)*test_env.CTRL_FREQ):
         action, _states = model.predict(obs,

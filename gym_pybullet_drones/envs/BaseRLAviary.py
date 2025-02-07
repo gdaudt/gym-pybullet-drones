@@ -26,7 +26,7 @@ class BaseRLAviary(BaseAviary):
                  record=False,
                  obs: ObservationType=ObservationType.KIN,
                  act: ActionType=ActionType.RPM,
-                 numrays: int = 36,
+                 numrays: int = 180,
                  lidar_angle: float = 2*np.pi,
                  max_range:  float = 3.0
                  ):
@@ -73,7 +73,7 @@ class BaseRLAviary(BaseAviary):
         self.OBS_TYPE = obs
         self.ACT_TYPE = act
         #### Create integrated controllers #########################
-        if act in [ActionType.PID, ActionType.VEL, ActionType.ONE_D_PID]:
+        if act in [ActionType.PID, ActionType.VEL, ActionType.ONE_D_PID, ActionType.TWO_D_PID]:
             os.environ['KMP_DUPLICATE_LIB_OK']='True'
             if drone_model in [DroneModel.CF2X, DroneModel.CF2P]:
                 self.ctrl = [DSLPIDControl(drone_model=DroneModel.CF2X) for i in range(num_drones)]
@@ -152,6 +152,8 @@ class BaseRLAviary(BaseAviary):
             size = 3
         elif self.ACT_TYPE in [ActionType.ONE_D_RPM, ActionType.ONE_D_PID]:
             size = 1
+        elif self.ACT_TYPE==ActionType.TWO_D_PID:
+            size = 2
         else:
             print("[ERROR] in BaseRLAviary._actionSpace()")
             exit()
@@ -241,6 +243,31 @@ class BaseRLAviary(BaseAviary):
                                                         target_pos=state[0:3]+0.1*np.array([0,0,target[0]])
                                                         )
                 rpm[k,:] = res
+            elif self.ACT_TYPE == ActionType.TWO_D_PID:
+                state = self._getDroneStateVector(k)
+                # The target is a 2D displacement: scale it (e.g., 0.1 m per unit)
+                offset = 0.1 * target  # target is a length-2 array: [delta_x, delta_y]
+                # Build the destination: adjust x and y, fix z at 1.0 (or your desired altitude)
+                destination = np.array([state[0] + offset[0],
+                                        state[1] + offset[1],
+                                        1.0])
+                # Use _calculateNextStep to generate an intermediate waypoint.
+                next_pos = self._calculateNextStep(current_position=state[0:3],
+                                                destination=destination,
+                                                step_size=1)
+                # Use the current yaw for a stable heading; optionally, you might want to set fixed roll and pitch.
+                
+                target_rpy = np.array([0, 0, state[9]])
+                
+                res, _, _ = self.ctrl[k].computeControl(control_timestep=self.CTRL_TIMESTEP,
+                                                        cur_pos=state[0:3],
+                                                        cur_quat=state[3:7],
+                                                        cur_vel=state[10:13],
+                                                        cur_ang_vel=state[13:16],
+                                                        target_pos=next_pos,
+                                                        target_rpy=target_rpy)
+                rpm[k, :] = res  
+
             else:
                 print("[ERROR] in BaseRLAviary._preprocessAction()")
                 exit()
@@ -265,6 +292,8 @@ class BaseRLAviary(BaseAviary):
         max_range = self.LIDAR_MAX_RANGE
         # Generate ray angles evenly spaced [0, lidar angle parameter) in radians
         angles = np.linspace(0, self.HORIZONTAL_ANGLE, num_rays, endpoint=False)
+        # Print the angles to debug
+        #print("Lidar angles: ", angles)
         
         # The start position is the drone’s center repeated for each ray.
         start_positions = np.tile(drone_pos, (num_rays, 1))
@@ -336,6 +365,9 @@ class BaseRLAviary(BaseAviary):
                 elif self.ACT_TYPE in [ActionType.ONE_D_RPM, ActionType.ONE_D_PID]:
                     obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo] for i in range(self.NUM_DRONES)])])
                     obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi] for i in range(self.NUM_DRONES)])])
+                elif self.ACT_TYPE==ActionType.TWO_D_PID:
+                    obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo,act_lo] for i in range(self.NUM_DRONES)])])
+                    obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi,act_hi] for i in range(self.NUM_DRONES)])])
             return spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)           
         elif self.OBS_TYPE == ObservationType.KINLID:
             ############################################################
@@ -358,6 +390,9 @@ class BaseRLAviary(BaseAviary):
                 elif self.ACT_TYPE in [ActionType.ONE_D_RPM, ActionType.ONE_D_PID]:
                     obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo] for i in range(self.NUM_DRONES)])])
                     obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi] for i in range(self.NUM_DRONES)])])
+                elif self.ACT_TYPE==ActionType.TWO_D_PID:
+                    obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo,act_lo] for i in range(self.NUM_DRONES)])])
+                    obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi,act_hi] for i in range(self.NUM_DRONES)])])
             #### Add LIDAR data to observation space ###################
             num_rays = self.LIDAR_NUM_RAYS
             lidar_lower = np.zeros((self.NUM_DRONES, num_rays))

@@ -20,9 +20,9 @@ class EmpowermentAviary(BaseRLAviary):
                  ctrl_freq: int = 30,
                  gui=False,
                  record=False,
-                 obs: ObservationType=ObservationType.KINLID,
+                 obs: ObservationType=ObservationType.KIN,
                  act: ActionType=ActionType.PID,
-                 numrays: int = 36,
+                 num_rays: int = 180,
                  lidar_angle: float = 2*np.pi,
                  max_range: float = 3.0
                  ):
@@ -57,10 +57,12 @@ class EmpowermentAviary(BaseRLAviary):
 
         """
         self.TARGET_POS = np.array([3, 0, 1])
-        self.EPISODE_LEN_SEC = 40
+        self.EPISODE_LEN_SEC = 30
         self.OBSTACLES = []
-        self.LIDAR_DATA = []
+        #initialize the lidar data with inf values of length num_rays, with max_range values
+        self.LIDAR_DATA = [max_range for _ in range(num_rays)]
         self.OBSERVATION_TYPE = obs
+        self.ACT_TYPE = act
         self.rayMissColor = [0, 1, 0]
         self.rayHitColor = [1, 0, 0]
         self.rayFrom = []
@@ -73,9 +75,11 @@ class EmpowermentAviary(BaseRLAviary):
         self.obstacleLookup = {}
         self.ndeg = np.pi/2
         
-        self.LIDAR_NUM_RAYS = numrays
+        self.LIDAR_NUM_RAYS = num_rays
         self.LIDAR_ANGLE = lidar_angle
         self.LIDAR_MAX_RANGE = max_range
+        self.lidar_angles = np.linspace(0, lidar_angle, num_rays, endpoint=False)
+        
         
         # mode of trajectory sampling
         # 1 = chebyshev integrator, 2 = fourier series
@@ -85,7 +89,7 @@ class EmpowermentAviary(BaseRLAviary):
         # gravity force added to the maximum thrust force, taken from the CF2X model urdf file
         self.F_MAX = 0.027 * 9.81 + 0.027 * 8.33 # from max speed being 30 km/h over 1s
         # number of chebychev basisfunctions or fourier series terms
-        self.N = 10
+        self.N = 5
         # end time of the trajectory
         self.T_END = 1
         # omega for fourier series
@@ -149,10 +153,11 @@ class EmpowermentAviary(BaseRLAviary):
 ####################################################################
 
     # override the reset method to spawn obstacles
-    # def reset(self, seed = None, options = None):
-    #     initial_obs, initial_info = super().reset(seed, options)        
-    #     self.reset_lidar()
-    #     return initial_obs, initial_info
+    def reset(self, seed = None, options = None):
+        initial_obs, initial_info = super().reset(seed, options)        
+        #self.reset_lidar()
+        #print("Initial observation: ", initial_obs)
+        return initial_obs, initial_info
 
 ####################################################################
 
@@ -216,9 +221,15 @@ class EmpowermentAviary(BaseRLAviary):
     #extend the step function to simulate the lidar sensor
     def step(self, action):
         obs, reward, terminated, truncated, info = super().step(action)
-        # if self.OBSERVATION_TYPE == ObservationType.KINLID:
-        #     #print only lidar information from observation
-        #     print("LIDAR DATA: ", obs[0][57:])
+        if self.OBSERVATION_TYPE == ObservationType.KINLID:
+            #print only lidar information from observation
+            # starts at obs_space.shape[2] - self.LIDAR_NUM_RAYS
+            lidar_index = obs.shape[-1] - self.LIDAR_NUM_RAYS
+            self.LIDAR_DATA = obs[0][lidar_index:]
+            # print("Lidar index is: ", lidar_index)
+            # print("LIDAR DATA: ", self.LIDAR_DATA)
+            # #print the observation space shape labeled by the action type:
+            # print("Action type is: ", self.ACT_TYPE)
         # save simulate lider for later
         #self.simulateLidar()
         return obs, reward, terminated, truncated, info
@@ -241,10 +252,46 @@ class EmpowermentAviary(BaseRLAviary):
         empowerment = self._computeEmpowerment(state)
         # print("current velocity: ", state[10:13])
         # print("current position: ", state[0:3])
-        # print("current empowerment: ", empowerment)
+        #print("current empowerment: ", empowerment)
+        # reduce reward if drone is too tilted
+        if abs(state[7]) > .9 or abs(state[8]) > .9:
+            reward += -1
+            
         return (reward*1.5) * (empowerment)
         #return reward
 
+####################################################################
+    #compute the empowerment of the agent
+    def _computeEmpowerment(self, state):
+        
+        final_points = None
+        
+        for _ in range(self.N_TRAJECTORIES):
+            computed_trajectory = self._computeTrajectory(state)
+            if(self._computeCollision(computed_trajectory)):
+                continue
+            else:
+                if final_points is None:
+                    final_points = np.array([computed_trajectory])
+                else:
+                    final_points = np.vstack((final_points, computed_trajectory))
+        
+        # if final_points have enough points to compute a convex hull (at least 4), compute the empowerment
+        if final_points is not None and final_points.shape[0] > 3:
+            if self.ACT_TYPE == ActionType.TWO_D_PID:   
+                # add a slightly larger coordinate of z to the final points to make the convex hull 3D
+                # append a new coordinate at the end of the points with the same x and y values as the last point, but with z = 1.05
+                if self.OBSERVATION_TYPE == ObservationType.KINLID:
+                    final_points = np.vstack((final_points, [final_points[-1][0], final_points[-1][1], 1.05, final_points[-1][3]]))
+                else:
+                    final_points = np.vstack((final_points, [final_points[-1][0], final_points[-1][1], 1.05]))
+            hull = ConvexHull(final_points)
+            empowerment = np.log(hull.volume)
+            #print how many trajectories did not collide
+            # print("Number of trajectories safe: ", final_points.shape[0])
+            return empowerment        
+        return 0.0
+     
 ####################################################################
 
     # compute a trajectory based on current state and chebyshev polynomials
@@ -277,28 +324,64 @@ class EmpowermentAviary(BaseRLAviary):
             return np.array([x[-1], y[-1], z[-1]])
         
         elif self.SAMPLING == 2:
-            # Random Fourier coefficients within force limits
-            A_x = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
-            B_x = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
-            A_y = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
-            B_y = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
-            A_z = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
-            B_z = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
-            
-            # Compute acceleration as a Fourier series
-            a_x = np.sum([A_x[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_x[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
-            a_y = np.sum([A_y[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_y[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
-            a_z = np.sum([A_z[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_z[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
-            
-            # Integrate acceleration to get velocity
-            v_x = state[10] + np.cumsum(a_x) * (self.T_END / self.N_POINTS)
-            v_y = state[11] + np.cumsum(a_y) * (self.T_END / self.N_POINTS)
-            v_z = state[12] + np.cumsum(a_z) * (self.T_END / self.N_POINTS)
+            # if action type is TWO_D_PID, the action is a 2D waypoint, so the trajectories should be 2D as well
+            if self.ACT_TYPE == ActionType.TWO_D_PID:
+                # Random Fourier coefficients within force limits
+                A_x = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                B_x = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                A_y = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                B_y = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                
+                # Compute acceleration as a Fourier series
+                a_x = np.sum([A_x[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_x[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
+                a_y = np.sum([A_y[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_y[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
+                
+                
+                # Integrate acceleration to get velocity
+                v_x = state[10] + np.cumsum(a_x) * (self.T_END / self.N_POINTS)
+                v_y = state[11] + np.cumsum(a_y) * (self.T_END / self.N_POINTS)
+                
+                # Integrate velocity to get position
+                x = state[0] + np.cumsum(v_x) * (self.T_END / self.N_POINTS)
+                y = state[1] + np.cumsum(v_y) * (self.T_END / self.N_POINTS)
+                
+                # compute the angle relative to the starting position
+                dx = x[-1] - state[0]
+                dy = y[-1] - state[1]
+                angle = np.arctan2(dy, dx)
+                #convert to positive radians from 0 to 2pi
+                if angle < 0:
+                    angle = 2*np.pi + angle
 
-            # Integrate velocity to get position
-            x = state[0] + np.cumsum(v_x) * (self.T_END / self.N_POINTS)
-            y = state[1] + np.cumsum(v_y) * (self.T_END / self.N_POINTS)
-            z = state[2] + np.cumsum(v_z) * (self.T_END / self.N_POINTS)
+                return np.array([x[-1], y[-1], state[2], angle])
+            
+            else:
+                
+                # Random Fourier coefficients within force limits
+                A_x = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                B_x = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                A_y = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                B_y = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                A_z = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                B_z = np.random.uniform(-self.F_MAX, self.F_MAX, self.N)
+                
+                # Compute acceleration as a Fourier series
+                a_x = np.sum([A_x[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_x[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
+                a_y = np.sum([A_y[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_y[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
+                a_z = np.sum([A_z[n] * np.cos((n+1) * self.omega * self.T_SPACED) + B_z[n] * np.sin((n+1) * self.omega * self.T_SPACED) for n in range(self.N)], axis=0) / self.MASS
+                
+                # Integrate acceleration to get velocity
+                v_x = state[10] + np.cumsum(a_x) * (self.T_END / self.N_POINTS)
+                v_y = state[11] + np.cumsum(a_y) * (self.T_END / self.N_POINTS)
+                v_z = state[12] + np.cumsum(a_z) * (self.T_END / self.N_POINTS)
+
+                # Integrate velocity to get position
+                x = state[0] + np.cumsum(v_x) * (self.T_END / self.N_POINTS)
+                y = state[1] + np.cumsum(v_y) * (self.T_END / self.N_POINTS)
+                z = state[2] + np.cumsum(v_z) * (self.T_END / self.N_POINTS)
+            
+            
+            
             
             return np.array([x[-1], y[-1], z[-1]])
         
@@ -322,53 +405,46 @@ class EmpowermentAviary(BaseRLAviary):
                 #print("Collision with ground or ceiling")
                 return True
         
-        #check if the final position is inside an obstacle
-        for obstacle_id in self.obstacleLookup:
-            #if distance between object is too big, continue
-            if np.linalg.norm(self.obstacleLookup[obstacle_id][2]-final_pos) > 2:
-                continue
-            min_corner = self.obstacleLookup[obstacle_id][0]
-            max_corner = self.obstacleLookup[obstacle_id][1]
-            # if the final position is inside the obstacle or on ground (z<=0), return True
-            # print all corners and the final position          
-            # add artificial collision to ceiling at z = 2
+        #if using lidar in observation space, check if the final position intersects with obstacles according to lidar readings
+        if self.OBSERVATION_TYPE == ObservationType.KINLID:
             
-            if (min_corner[0] <= final_pos[0] <= max_corner[0] and
-                min_corner[1] <= final_pos[1] <= max_corner[1] and
-                min_corner[2] <= final_pos[2] <= max_corner[2]):
-                
-                #print("Collision with obstacle")
+            beam_index = np.argmin(np.abs(self.lidar_angles - final_pos[3]))
+            # print("Beam index: ", beam_index)
+            # print("lidar data size: ", len(self.LIDAR_DATA))
+            beam_distance = self.LIDAR_DATA[beam_index]
+            # get the distance between the final position and the drone's current position
+            distance = np.linalg.norm(final_pos[0:3]-self._getDroneStateVector(0)[0:3])
+            # if the distance is larger than the lidar distance, there is a collision
+            if distance > beam_distance:
+                # print("Plotted trajectory intersects with obstacle")
+                # print("Final point: ", final_pos, " Beam distance: ", beam_distance, " Distance: ", distance, " Beam angle: ", self.lidar_angles[beam_index], " Trajectory angle: ", final_pos[3])
                 return True
+            else:                        
+                return False
+        
+        else: 
+            #check if the final position is inside an obstacle
+            for obstacle_id in self.obstacleLookup:
+                #if distance between object is too big, continue
+                if np.linalg.norm(self.obstacleLookup[obstacle_id][2]-final_pos[0:3]) > 2:
+                    continue
+                min_corner = self.obstacleLookup[obstacle_id][0]
+                max_corner = self.obstacleLookup[obstacle_id][1]
+                # if the final position is inside the obstacle or on ground (z<=0), return True
+                # print all corners and the final position          
+                # add artificial collision to ceiling at z = 2
+                
+                if (min_corner[0] <= final_pos[0] <= max_corner[0] and
+                    min_corner[1] <= final_pos[1] <= max_corner[1] and
+                    min_corner[2] <= final_pos[2] <= max_corner[2]):
+                    
+                    #print("Collision with obstacle")
+                    return True
         return False
 
 ####################################################################
 
 
-    #compute the empowerment of the agent
-    def _computeEmpowerment(self, state):
-        
-        final_points = None
-        
-        for _ in range(self.N_TRAJECTORIES):
-            computed_trajectory = self._computeTrajectory(state)
-            if(self._computeCollision(computed_trajectory)):
-                continue
-            else:
-                if final_points is None:
-                    final_points = np.array([computed_trajectory])
-                else:
-                    final_points = np.vstack((final_points, computed_trajectory))
-        
-        # if final_points have enough points to compute a convex hull (at least 4), compute the empowerment
-        if final_points is not None and final_points.shape[0] > 3:
-            hull = ConvexHull(final_points)
-            empowerment = np.log(hull.volume)
-            #print how many trajectories did not collide
-            # print("Number of trajectories safe: ", final_points.shape[0])
-            return empowerment        
-        return 0.0
-     
-####################################################################
 
     def _computeTerminated(self):
         """Computes the current done value.
@@ -382,6 +458,10 @@ class EmpowermentAviary(BaseRLAviary):
 
         state = self._getDroneStateVector(0)       
         
+        #check if the drone is colliding with the ground
+        if(state[2] <= 0.05):
+            print("Terminated due to collision with ground")
+            return True
         p.performCollisionDetection()
         #check if the final position is inside an obstacle
         for obstacle_id in self.obstacleLookup:
@@ -412,11 +492,12 @@ class EmpowermentAviary(BaseRLAviary):
 
         """
         state = self._getDroneStateVector(0)
-        if (abs(state[0]) > 5 or abs(state[1]) > 5 or state[2] > 3.0 # Truncate when the drone is too far away
-             or abs(state[7]) > .9 or abs(state[8]) > .9 # Truncate when the drone is too tilted
+        if (abs(state[0]) > 5 or abs(state[1]) > 5 or state[2] > 3.0 # Truncate when the drone is too far away             
         ):
-            print("Truncated because drone is too far away or tilted")
+            print("Truncated because drone is too far away")
             return True
+        # if (abs(state[7]) > .9 or abs(state[8]) > .9):# Truncate when the drone is too tilted)            
+            
         if self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC:
             print("Truncated because episode length exceeded")
             return True
