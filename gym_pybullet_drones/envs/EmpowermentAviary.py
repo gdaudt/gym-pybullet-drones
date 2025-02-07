@@ -127,7 +127,10 @@ class EmpowermentAviary(BaseRLAviary):
         #[up+-down, left+-right, z]
         z = 1.05
         o = 0
-        obstacles= ([[1, 1, z], [2, 1, z], [1, 0, z], [2, 0, z], [1, -2, z], [2, -2, z]])
+        outer_walls = [[1, 1, z], [2, 1, z], [1, -2, z], [2, -2, z], [-1, 0, z], [-1, 0.5, z], [-1, -0.5, z], [-1, 1, z], [-1, -1, z], [0, 1, z], [-1, -1.5, z], [0, -2, z]]
+        obstacles= ([[1, 0, z], [2, 0, z]])
+        #add outer walls to obstacles
+        obstacles.extend(outer_walls)
         xoffset = 0.5
         yoffset = 0.25
         zoffset = 1
