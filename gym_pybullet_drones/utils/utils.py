@@ -6,6 +6,24 @@ import numpy as np
 from scipy.optimize import nnls
 
 ################################################################################
+# Union_find class for merging sets
+
+class UnionFind:
+    def __init__(self):
+        self.parent = {}
+
+    def find(self, a):
+        if self.parent[a] != a:
+            self.parent[a] = self.find(self.parent[a])
+        return self.parent[a]
+
+    def union(self, a, b):
+        rootA = self.find(a)
+        rootB = self.find(b)
+        if rootA != rootB:
+            self.parent[rootB] = rootA
+
+################################################################################
 
 def sync(i, start_time, timestep):
     """Syncs the stepped simulation with the wall-clock.

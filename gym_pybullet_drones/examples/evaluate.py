@@ -21,7 +21,7 @@ DEFAULT_RECORD_VIDEO = False
 DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
 
-DEFAULT_OBS = ObservationType('kin') # 'kin' or 'rgb', kin observation space is Kinematic information (pose, linear and angular velocities)
+DEFAULT_OBS = ObservationType('kin_lidar') # 'kin' or 'rgb', kin observation space is Kinematic information (pose, linear and angular velocities) or 'kin_lidar' for kin + lidar
 DEFAULT_ACT = ActionType('two_d_pid') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid' or 'two_d_pid'
 DEFAULT_AGENTS = 2
 DEFAULT_MA = False

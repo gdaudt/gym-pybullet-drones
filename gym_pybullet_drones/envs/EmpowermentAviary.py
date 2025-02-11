@@ -3,10 +3,12 @@ import pybullet as p
 import pybullet_utils
 
 
+from gym_pybullet_drones.utils.utils import UnionFind
 from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType
 from scipy.integrate import cumulative_trapezoid
 from scipy.spatial import ConvexHull
+from scipy.spatial import KDTree
 
 class EmpowermentAviary(BaseRLAviary):
     """ Single or multi-agent RL problem: reaching a target position while maximizing empowerment. """
@@ -97,7 +99,7 @@ class EmpowermentAviary(BaseRLAviary):
         # number of points in the trajectory
         self.N_POINTS = 100
         #number of trajectories sampled
-        self.N_TRAJECTORIES = 50
+        self.N_TRAJECTORIES = 100
         self.T_SPACED = np.linspace(0, self.T_END, self.N_POINTS)
         
         
@@ -130,7 +132,6 @@ class EmpowermentAviary(BaseRLAviary):
         outer_walls = [[1, 1, z], [2, 1, z], [1, -2, z], [2, -2, z], [-1, 0, z], [-1, 0.5, z], [-1, -0.5, z], [-1, 1, z], [-1, -1, z], [0, 1, z], [-1, -1.5, z], [0, -2, z],
                        [5, 0, z], [5, 0.5, z], [5, -0.5, z], [5, 1, z], [5, -1, z], [5, -1.5, z], [3, -2, z], [4, -2, z], [3, 1, z], [4, 1, z]] 
         obstacles= ([[1, 0, z], [2, 0, z]])
-        #add outer walls to obstacles
         obstacles.extend(outer_walls)
         xoffset = 0.5
         yoffset = 0.25
@@ -154,6 +155,7 @@ class EmpowermentAviary(BaseRLAviary):
                 self.obstacleLookup[obstacle_id] = [[obstaclePosition[0]+xoffset, obstaclePosition[1]+yoffset, obstaclePosition[2]-zoffset], [obstaclePosition[0]-xoffset, obstaclePosition[1]-yoffset, obstaclePosition[2]+zoffset], obstaclePosition]
                 print("Obstacle: ", obstacle_id, " positions: ", self.obstacleLookup[obstacle_id])            
         self.createObstacleLookup = False
+        
 ####################################################################
 
     # override the reset method to spawn obstacles
@@ -260,7 +262,8 @@ class EmpowermentAviary(BaseRLAviary):
         # reduce reward if drone is too tilted
         if abs(state[7]) > .9 or abs(state[8]) > .9:
             reward += -1
-            
+        if empowerment < 0:
+            return reward - empowerment
         return (reward*1.5) * (empowerment)
         #return reward
 
@@ -269,19 +272,52 @@ class EmpowermentAviary(BaseRLAviary):
     def _computeEmpowerment(self, state):
         
         final_points = None
+        uf = UnionFind()
+        # original method for computing empowerment, commented out
         
-        for _ in range(self.N_TRAJECTORIES):
+        # for _ in range(self.N_TRAJECTORIES):
+        #     computed_trajectory = self._computeTrajectory(state)
+        #     if(self._computeCollision(computed_trajectory)):
+        #         continue
+        #     else:
+        #         if final_points is None:
+        #             final_points = np.array([computed_trajectory])
+        #         else:
+        #             final_points = np.vstack((final_points, computed_trajectory))
+        
+        for i in range(self.N_TRAJECTORIES):
             computed_trajectory = self._computeTrajectory(state)
-            if(self._computeCollision(computed_trajectory)):
-                continue
+            if final_points is None:
+                final_points = np.array([computed_trajectory])
             else:
-                if final_points is None:
-                    final_points = np.array([computed_trajectory])
-                else:
-                    final_points = np.vstack((final_points, computed_trajectory))
+                final_points = np.vstack((final_points, computed_trajectory))
+            uf.parent[i] = i
+            
+        kd_tree = KDTree(final_points)
+        visited = set()
+        for i, point in enumerate(final_points):
+            if not self._computeCollision(point) and i not in visited:
+                component = []
+                stack = [i]
+                while stack:
+                    current = stack.pop()
+                    if current in visited:
+                        continue
+                    visited.add(current)
+                    neighbours = kd_tree.query(point, k=4)[1]
+                    for neighbour in neighbours:                        
+                        uf.union(current, neighbour)
+                        visited.add(neighbour)
+        components = {}
+        for index in visited:
+            root = uf.find(index)
+            if root not in components:
+                components[root] = set()
+            components[root].add(index)       
         
+                
         # if final_points have enough points to compute a convex hull (at least 4), compute the empowerment
-        if final_points is not None and final_points.shape[0] > 3:
+        if final_points is not None:
             if self.ACT_TYPE == ActionType.TWO_D_PID:   
                 # add a slightly larger coordinate of z to the final points to make the convex hull 3D
                 # append a new coordinate at the end of the points with the same x and y values as the last point, but with z = 1.05
@@ -290,9 +326,25 @@ class EmpowermentAviary(BaseRLAviary):
                 else:
                     final_points = np.vstack((final_points, [final_points[-1][0], final_points[-1][1], 1.05]))
             hull = ConvexHull(final_points)
+            # also calculate the hull for each of the created components
+            #print("initial hull volume: ", hull.volume)
+            for i, component in enumerate(components.values()):
+                component = [kd_tree.data[value] for value in component]
+                component = np.array(component)
+                if self.ACT_TYPE == ActionType.TWO_D_PID:
+                    if self.OBSERVATION_TYPE == ObservationType.KINLID:
+                        component = np.vstack((component, [component[-1][0], component[-1][1], 1.05, component[-1][3]]))
+                        #adjust adding to the component for a set
+                        #component[i].add([component[-1][0], component[-1][1], 1.05, component[-1][3]])
+                    else:
+                        component = np.vstack((component, [component[-1][0], component[-1][1], 1.05]))
+                        #component[i].add([component[-1][0], component[-1][1], 1.05])
+                c_hull = ConvexHull(component)
+                # subtract the volume of the component hull from the total hull volume
+                hull.volume -= c_hull.volume
+            #     print("subtracted hull volume: ", c_hull.volume)
+            # print("end hull volume: ", hull.volume)
             empowerment = np.log(hull.volume)
-            #print how many trajectories did not collide
-            # print("Number of trajectories safe: ", final_points.shape[0])
             return empowerment        
         return 0.0
      
