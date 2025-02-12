@@ -58,7 +58,7 @@ class EmpowermentAviary(BaseRLAviary):
             The type of action space (1 or 3D; RPMS, thurst and torques, or waypoint with PID control)
 
         """
-        self.TARGET_POS = np.array([3, 0, 1])
+        self.TARGET_POS = np.array([3, 0.3, 1])
         self.EPISODE_LEN_SEC = 30
         self.OBSTACLES = []
         #initialize the lidar data with inf values of length num_rays, with max_range values
@@ -87,9 +87,9 @@ class EmpowermentAviary(BaseRLAviary):
         # 1 = chebyshev integrator, 2 = fourier series
         self.SAMPLING = 2
         # constants for trajectory sampling
-        self.MASS = 0.027 # from the CF2X model urdf file
+        self.MASS = 0.27 # from the CF2X model urdf file
         # gravity force added to the maximum thrust force, taken from the CF2X model urdf file
-        self.F_MAX = 0.027 * 9.81 + 0.027 * 8.33 # from max speed being 30 km/h over 1s
+        self.F_MAX = 0.27 * 9.81 + 0.27 * 0.6 # 
         # number of chebychev basisfunctions or fourier series terms
         self.N = 5
         # end time of the trajectory
@@ -99,7 +99,7 @@ class EmpowermentAviary(BaseRLAviary):
         # number of points in the trajectory
         self.N_POINTS = 100
         #number of trajectories sampled
-        self.N_TRAJECTORIES = 100
+        self.N_TRAJECTORIES = 150
         self.T_SPACED = np.linspace(0, self.T_END, self.N_POINTS)
         
         
@@ -264,7 +264,7 @@ class EmpowermentAviary(BaseRLAviary):
             reward += -1
         if empowerment < 0:
             return reward - empowerment
-        return (reward*1.5) * (empowerment)
+        return (reward*1.3) * (empowerment)
         #return reward
 
 ####################################################################
@@ -434,12 +434,9 @@ class EmpowermentAviary(BaseRLAviary):
                 # Integrate velocity to get position
                 x = state[0] + np.cumsum(v_x) * (self.T_END / self.N_POINTS)
                 y = state[1] + np.cumsum(v_y) * (self.T_END / self.N_POINTS)
-                z = state[2] + np.cumsum(v_z) * (self.T_END / self.N_POINTS)
-            
-            
-            
-            
-            return np.array([x[-1], y[-1], z[-1]])
+                z = state[2] + np.cumsum(v_z) * (self.T_END / self.N_POINTS)  
+                      
+                return np.array([x[-1], y[-1], z[-1]])
         
         else:
             print("Wrong sampling mode chosen")

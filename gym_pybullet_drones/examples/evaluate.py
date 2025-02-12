@@ -29,6 +29,7 @@ DEFAULT_MA = False
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, checkpoint=None, checkpoint_folder=None, filename=None):
     
+    csvfilename = filename + '.csv'
     filename = os.path.join(output_folder, filename)       
 
     
@@ -69,13 +70,15 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     
     mean_reward, std_reward = evaluate_policy(model,
                                               test_env_nogui,
-                                              n_eval_episodes=2
+                                              n_eval_episodes=1
                                               )
     print("\n\n\nMean reward ", mean_reward, " +- ", std_reward, "\n\n")
     
     obs, info = test_env.reset(seed=42, options={})
     #print obs for debugging
     start = time.time()
+    with open(csvfilename, 'a') as f:
+        f.write('time,x,y\n')
     for i in range((test_env.EPISODE_LEN_SEC+2)*test_env.CTRL_FREQ):
         action, _states = model.predict(obs,
                                         deterministic=True
@@ -84,7 +87,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         obs2 = obs.squeeze()
         act2 = action.squeeze()
         print("Obs:", obs, "\tAction", action, "\tReward:", reward, "\tTerminated:", terminated, "\tTruncated:", truncated)
-        if DEFAULT_OBS == ObservationType.KIN:
+        if DEFAULT_OBS == ObservationType.KIN or DEFAULT_OBS == ObservationType.KINLID:
             if not multiagent:
                 logger.log(drone=0,
                     timestamp=i/test_env.CTRL_FREQ,
@@ -95,6 +98,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                         ]),
                     control=np.zeros(12)
                     )
+                #save the x and y positions of the drone along with the timestamp to a csv file
+                with open(csvfilename, 'a') as f:
+                    f.write(str(i/test_env.CTRL_FREQ) + ',' + str(obs2[0]) + ',' + str(obs2[1]) + '\n')                
             else:
                 for d in range(DEFAULT_AGENTS):
                     logger.log(drone=d,
@@ -113,7 +119,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
             obs = test_env.reset(seed=42, options={})
     test_env.close()
 
-    if plot and DEFAULT_OBS == ObservationType.KIN:
+    if plot and DEFAULT_OBS == ObservationType.KIN or DEFAULT_OBS == ObservationType.KINLID:
         logger.plot()
 
 if __name__ == '__main__':
