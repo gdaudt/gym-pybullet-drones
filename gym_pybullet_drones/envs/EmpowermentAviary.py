@@ -1,7 +1,7 @@
 import numpy as np
 import pybullet as p
 import pybullet_utils
-
+import random
 
 from gym_pybullet_drones.utils.utils import UnionFind
 from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
@@ -15,6 +15,8 @@ class EmpowermentAviary(BaseRLAviary):
     ####################################################################
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X,
+                 #start the drone at (0, 0.5, 0.2)
+                 #initial_xyzs=np.array([[0, 0.5, 0.2]]),
                  initial_xyzs=None,
                  initial_rpys=None,
                  physics: Physics=Physics.PYB,
@@ -58,7 +60,7 @@ class EmpowermentAviary(BaseRLAviary):
             The type of action space (1 or 3D; RPMS, thurst and torques, or waypoint with PID control)
 
         """
-        self.TARGET_POS = np.array([3, 0.3, 1])
+        self.TARGET_POS = np.array([3, 0, 1])
         self.EPISODE_LEN_SEC = 30
         self.OBSTACLES = []
         #initialize the lidar data with inf values of length num_rays, with max_range values
@@ -82,6 +84,11 @@ class EmpowermentAviary(BaseRLAviary):
         self.LIDAR_MAX_RANGE = max_range
         self.lidar_angles = np.linspace(0, lidar_angle, num_rays, endpoint=False)
         
+        # randomization flags
+        self.RANDOMIZE_START = True
+        self.RANDOMIZE_END = True
+        self.RANDOMIZE_OBSTACLES = True
+        
         
         # mode of trajectory sampling
         # 1 = chebyshev integrator, 2 = fourier series
@@ -91,15 +98,15 @@ class EmpowermentAviary(BaseRLAviary):
         # gravity force added to the maximum thrust force, taken from the CF2X model urdf file
         self.F_MAX = 0.27 * 9.81 + 0.27 * 0.6 # 
         # number of chebychev basisfunctions or fourier series terms
-        self.N = 5
+        self.N = 6
         # end time of the trajectory
-        self.T_END = 1
+        self.T_END = 2
         # omega for fourier series
         self.omega = 2*np.pi / self.T_END
         # number of points in the trajectory
         self.N_POINTS = 100
         #number of trajectories sampled
-        self.N_TRAJECTORIES = 150
+        self.N_TRAJECTORIES = 100
         self.T_SPACED = np.linspace(0, self.T_END, self.N_POINTS)
         
         
@@ -131,7 +138,13 @@ class EmpowermentAviary(BaseRLAviary):
         o = 0
         outer_walls = [[1, 1, z], [2, 1, z], [1, -2, z], [2, -2, z], [-1, 0, z], [-1, 0.5, z], [-1, -0.5, z], [-1, 1, z], [-1, -1, z], [0, 1, z], [-1, -1.5, z], [0, -2, z],
                        [5, 0, z], [5, 0.5, z], [5, -0.5, z], [5, 1, z], [5, -1, z], [5, -1.5, z], [3, -2, z], [4, -2, z], [3, 1, z], [4, 1, z]] 
-        obstacles= ([[1, 0, z], [2, 0, z]])
+        if self.RANDOMIZE_OBSTACLES:
+            #randomize the y position of the obstacles, within a range of 0.3 to -1
+            y_pos = round(random.uniform(-1, 0.3), 2)
+            #print("spawning obstacle at y: ", y_pos)
+            obstacles = [[1, y_pos, z], [2, y_pos, z]]
+        else:
+            obstacles= ([[1, 0, z], [2, 0, z]])
         obstacles.extend(outer_walls)
         xoffset = 0.5
         yoffset = 0.25
@@ -160,6 +173,20 @@ class EmpowermentAviary(BaseRLAviary):
 
     # override the reset method to spawn obstacles
     def reset(self, seed = None, options = None):
+        if self.RANDOMIZE_START:
+            # choose a random y and x starting positions for the drone
+            x_pos = round(random.uniform(-0.3, 0.3), 2)
+            y_pos = round(random.uniform(-1.6, 0.4), 2)
+            z_pos = 0.2
+            self.INIT_XYZS = np.array([[x_pos, y_pos, z_pos]])
+            #print("starting drone at x: ", x_pos, " y: ", y_pos)
+        if self.RANDOMIZE_END:
+            # choose a random y and x target position for the drone
+            x_pos = round(random.uniform(2.7, 4.2), 2)
+            y_pos = round(random.uniform(-1.6, 0.4), 2)
+            z_pos = 1
+            self.TARGET_POS = np.array([x_pos, y_pos, z_pos])
+            #print("target drone at x: ", x_pos, " y: ", y_pos)        
         initial_obs, initial_info = super().reset(seed, options)        
         #self.reset_lidar()
         #print("Initial observation: ", initial_obs)
@@ -264,7 +291,7 @@ class EmpowermentAviary(BaseRLAviary):
             reward += -1
         if empowerment < 0:
             return reward - empowerment
-        return (reward*1.3) * (empowerment)
+        return (reward*1.5) * (empowerment)
         #return reward
 
 ####################################################################

@@ -26,7 +26,7 @@ class BaseRLAviary(BaseAviary):
                  record=False,
                  obs: ObservationType=ObservationType.KIN,
                  act: ActionType=ActionType.RPM,
-                 numrays: int = 180,
+                 num_rays: int = 180,
                  lidar_angle: float = 2*np.pi,
                  max_range:  float = 3.0
                  ):
@@ -98,7 +98,7 @@ class BaseRLAviary(BaseAviary):
             self.SPEED_LIMIT = 0.03 * self.MAX_SPEED_KMH * (1000/3600)
             
         if obs == ObservationType.KINLID:
-            self.LIDAR_NUM_RAYS = numrays
+            self.LIDAR_NUM_RAYS = num_rays
             self.LIDAR_MAX_RANGE = max_range
             self.HORIZONTAL_ANGLE = lidar_angle
 
