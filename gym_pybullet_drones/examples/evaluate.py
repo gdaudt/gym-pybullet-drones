@@ -78,7 +78,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #print obs for debugging
     start = time.time()
     with open(csvfilename, 'a') as f:
-        f.write('time,x,y\n')
+        f.write('time,x,y,z,vx,vy,vz\n')
     for i in range((test_env.EPISODE_LEN_SEC+2)*test_env.CTRL_FREQ):
         action, _states = model.predict(obs,
                                         deterministic=True
@@ -100,7 +100,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                     )
                 #save the x and y positions of the drone along with the timestamp to a csv file
                 with open(csvfilename, 'a') as f:
-                    f.write(str(i/test_env.CTRL_FREQ) + ',' + str(obs2[0]) + ',' + str(obs2[1]) + '\n')                
+                    f.write(str(i/test_env.CTRL_FREQ) + ',' + str(obs2[0]) + ',' + str(obs2[1]) + ',' + str(obs2[2]) + ',' + str(obs2[10]) + ',' + str(obs2[11]) + ',' + str(obs2[12]) + '\n')                
             else:
                 for d in range(DEFAULT_AGENTS):
                     logger.log(drone=d,
