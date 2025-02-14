@@ -15,11 +15,14 @@ def main():
     OBSTACLE_WIDTH = 1    # fixed width for all obstacles
     OBSTACLE_HEIGHT = 0.5   # fixed height for all obstacles
     z = 1.05
+    y = -0.63
     # Define obstacles as a list of center positions: (center_x, center_y)
+    goal = ([3.66, -0.31, z])
 
-    obstacles= ([[1, 0, z], [2, 0, z], [1, 1, z], [2, 1, z], [1, -2, z], [2, -2, z], [-1, 0, z], [-1, 0.5, z], [-1, -0.5, z], [-1, 1, z], [-1, -1, z], [0, 1, z], [-1, -1.5, z], [0, -2, z],
+    obstacles= ([[1, 1, z], [2, 1, z], [1, -2, z], [2, -2, z], [-1, 0, z], [-1, 0.5, z], [-1, -0.5, z], [-1, 1, z], [-1, -1, z], [0, 1, z], [-1, -1.5, z], [0, -2, z],
                        [5, 0, z], [5, 0.5, z], [5, -0.5, z], [5, 1, z], [5, -1, z], [5, -1.5, z], [3, -2, z], [4, -2, z], [3, 1, z], [4, 1, z]])
-
+    inner_walls = ([[1, y, z], [2, y, z]])
+    obstacles.extend(inner_walls)
     # ----- Read CSV Data -----
     # The CSV file is expected to have columns: time, x, y
     df = pd.read_csv(args.csv_file)
@@ -52,10 +55,13 @@ def main():
     ax.plot(x, y, label='Trajectory', color='blue', linewidth=2)
 
     # Mark the start point (first coordinate) with a green circle
-    ax.plot(x.iloc[0], y.iloc[0], marker='o', markersize=8, color='green', label='Start')
+    ax.plot(x.iloc[0], y.iloc[0], marker='o', markersize=8, color='purple', label='Start')
 
     # Mark the end point (last coordinate) with a red square
     ax.plot(x.iloc[-1], y.iloc[-1], marker='s', markersize=8, color='red', label='End')
+    
+    goal_x, goal_y, _ = goal
+    ax.plot(goal_x, goal_y, marker='*', markersize=12, color='green', label='Goal')
 
     # Set labels and title
     ax.set_xlabel('X Position')

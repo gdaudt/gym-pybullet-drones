@@ -94,9 +94,9 @@ class EmpowermentAviary(BaseRLAviary):
         # 1 = chebyshev integrator, 2 = fourier series
         self.SAMPLING = 2
         # constants for trajectory sampling
-        self.MASS = 0.27 # from the CF2X model urdf file
+        self.MASS = 0.027 # from the CF2X model urdf file
         # gravity force added to the maximum thrust force, taken from the CF2X model urdf file
-        self.F_MAX = 0.27 * 9.81 + 0.27 * 0.6 # 
+        self.F_MAX = self.MASS * 9.81 + self.MASS * 0.6 # 
         # number of chebychev basisfunctions or fourier series terms
         self.N = 6
         # end time of the trajectory
@@ -179,14 +179,14 @@ class EmpowermentAviary(BaseRLAviary):
             y_pos = round(random.uniform(-1.6, 0.4), 2)
             z_pos = 0.2
             self.INIT_XYZS = np.array([[x_pos, y_pos, z_pos]])
-            #print("starting drone at x: ", x_pos, " y: ", y_pos)
+            print("starting drone at x: ", x_pos, " y: ", y_pos)
         if self.RANDOMIZE_END:
             # choose a random y and x target position for the drone
             x_pos = round(random.uniform(2.7, 4.2), 2)
             y_pos = round(random.uniform(-1.6, 0.4), 2)
             z_pos = 1
             self.TARGET_POS = np.array([x_pos, y_pos, z_pos])
-            #print("target drone at x: ", x_pos, " y: ", y_pos)        
+            print("target drone at x: ", x_pos, " y: ", y_pos)        
         initial_obs, initial_info = super().reset(seed, options)        
         #self.reset_lidar()
         #print("Initial observation: ", initial_obs)
