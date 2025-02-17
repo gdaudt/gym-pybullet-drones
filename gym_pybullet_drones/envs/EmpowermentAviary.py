@@ -100,11 +100,11 @@ class EmpowermentAviary(BaseRLAviary):
         # number of chebychev basisfunctions or fourier series terms
         self.N = 6
         # end time of the trajectory
-        self.T_END = 2
+        self.T_END = 1
         # omega for fourier series
         self.omega = 2*np.pi / self.T_END
         # number of points in the trajectory
-        self.N_POINTS = 100
+        self.N_POINTS = 200
         #number of trajectories sampled
         self.N_TRAJECTORIES = 100
         self.T_SPACED = np.linspace(0, self.T_END, self.N_POINTS)
@@ -128,11 +128,6 @@ class EmpowermentAviary(BaseRLAviary):
     #add obstacles to the environment
     def _addObstacles(self):
         
-       
-        # obstacle1pos = [-1, -1, .5]
-        # obstacle2pos = [.5, 1, .5]
-        # obstacle3pos = [.5, 2, .5]
-        # obstacle4pos = [-1, 2, .5]
         #[up+-down, left+-right, z]
         z = 1.05
         o = 0
@@ -289,9 +284,9 @@ class EmpowermentAviary(BaseRLAviary):
         # reduce reward if drone is too tilted
         if abs(state[7]) > .9 or abs(state[8]) > .9:
             reward += -1
-        if empowerment < 0:
-            return reward - empowerment
-        return (reward*1.5) * (empowerment)
+        # if empowerment < 0:
+        #     return reward - empowerment
+        return (reward) * (empowerment)
         #return reward
 
 ####################################################################
@@ -352,6 +347,11 @@ class EmpowermentAviary(BaseRLAviary):
                     final_points = np.vstack((final_points, [final_points[-1][0], final_points[-1][1], 1.05, final_points[-1][3]]))
                 else:
                     final_points = np.vstack((final_points, [final_points[-1][0], final_points[-1][1], 1.05]))
+            else:
+                if self.OBSERVATION_TYPE == ObservationType.KINLID:
+                    final_points = np.vstack((final_points, [final_points[-1][0], final_points[-1][1], final_points[-1][2], final_points[-1][3]]))
+                else:
+                    final_points = np.vstack((final_points, [final_points[-1][0], final_points[-1][1], final_points[-1][2]]))
             hull = ConvexHull(final_points)
             # also calculate the hull for each of the created components
             #print("initial hull volume: ", hull.volume)
@@ -365,6 +365,11 @@ class EmpowermentAviary(BaseRLAviary):
                         #component[i].add([component[-1][0], component[-1][1], 1.05, component[-1][3]])
                     else:
                         component = np.vstack((component, [component[-1][0], component[-1][1], 1.05]))
+                else:
+                    if self.OBSERVATION_TYPE == ObservationType.KINLID:
+                        component = np.vstack((component, [component[-1][0], component[-1][1], component[-1][2], component[-1][3]]))
+                    else:
+                        component = np.vstack((component, [component[-1][0], component[-1][1], component[-1][2]]))
                         #component[i].add([component[-1][0], component[-1][1], 1.05])
                 c_hull = ConvexHull(component)
                 # subtract the volume of the component hull from the total hull volume
@@ -462,8 +467,25 @@ class EmpowermentAviary(BaseRLAviary):
                 x = state[0] + np.cumsum(v_x) * (self.T_END / self.N_POINTS)
                 y = state[1] + np.cumsum(v_y) * (self.T_END / self.N_POINTS)
                 z = state[2] + np.cumsum(v_z) * (self.T_END / self.N_POINTS)  
-                      
-                return np.array([x[-1], y[-1], z[-1]])
+                
+                # compute the difference vector between the final position and the starting position
+                diff = np.array([x[-1], y[-1], z[-1]]) - state[0:3]                
+                # compute the norm between the final position and the starting position
+                norm = np.linalg.norm([x[-1], y[-1], z[-1]] - state[0:3])
+                # compute the theta angle between the final position and the starting position using arctan2
+                theta = np.arctan2(diff[1], diff[0])
+                # convert the angle to positive radians from 0 to 2pi
+                if theta < 0:
+                    theta = 2*np.pi + theta
+                # compute the polar angle phi between the final position and the starting position
+                phi = np.arccos(diff[2]/norm)
+                # convert the angle to positive radians from 0 to pi
+                if phi < 0:
+                    phi = np.pi + phi
+                # return the final position and the angles
+                return np.array([x[-1], y[-1], z[-1], theta, phi])
+                
+                #return np.array([x[-1], y[-1], z[-1]])
         
         else:
             print("Wrong sampling mode chosen")
@@ -572,10 +594,10 @@ class EmpowermentAviary(BaseRLAviary):
 
         """
         state = self._getDroneStateVector(0)
-        if (abs(state[0]) > 5 or abs(state[1]) > 5 or state[2] > 3.0 # Truncate when the drone is too far away             
-        ):
-            print("Truncated because drone is too far away")
-            return True
+        # if (abs(state[0]) > 5 or abs(state[1]) > 5 or state[2] > 3.0 # Truncate when the drone is too far away             
+        # ):
+        #     print("Truncated because drone is too far away")
+        #     return True
         # if (abs(state[7]) > .9 or abs(state[8]) > .9):# Truncate when the drone is too tilted)            
             
         if self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC:

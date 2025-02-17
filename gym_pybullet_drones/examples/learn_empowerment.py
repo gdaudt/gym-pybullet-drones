@@ -159,7 +159,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
 
     #### Show (and record a video of) the model's performance ##
     if not multiagent:
-        test_env = EmpowermentAviary(gui=gui,
+        test_env = EmpowermentAviary(gui=True,
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video)

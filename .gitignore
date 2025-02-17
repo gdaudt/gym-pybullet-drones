@@ -284,6 +284,9 @@ acs-*.bib
 *.trc
 *.xref
 
+# mp4
+*.mp4
+
 # hyperref
 *.brf
 
@@ -437,3 +440,4 @@ TSWLatexianTemp*
 # Uncomment the next line to have this generated file ignored.
 #*Notes.bib
 gym_pybullet_drones/examples/drone_0.csv
+gym_pybullet_drones/examples/animation_fastrotate.mp4

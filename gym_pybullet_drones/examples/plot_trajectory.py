@@ -15,9 +15,9 @@ def main():
     OBSTACLE_WIDTH = 1    # fixed width for all obstacles
     OBSTACLE_HEIGHT = 0.5   # fixed height for all obstacles
     z = 1.05
-    y = -0.63
+    y = 0.07
     # Define obstacles as a list of center positions: (center_x, center_y)
-    goal = ([3.66, -0.31, z])
+    goal = ([3.1, -1.58, z])
 
     obstacles= ([[1, 1, z], [2, 1, z], [1, -2, z], [2, -2, z], [-1, 0, z], [-1, 0.5, z], [-1, -0.5, z], [-1, 1, z], [-1, -1, z], [0, 1, z], [-1, -1.5, z], [0, -2, z],
                        [5, 0, z], [5, 0.5, z], [5, -0.5, z], [5, 1, z], [5, -1, z], [5, -1.5, z], [3, -2, z], [4, -2, z], [3, 1, z], [4, 1, z]])
