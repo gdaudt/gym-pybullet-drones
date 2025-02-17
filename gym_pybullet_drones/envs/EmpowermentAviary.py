@@ -98,13 +98,13 @@ class EmpowermentAviary(BaseRLAviary):
         # gravity force added to the maximum thrust force, taken from the CF2X model urdf file
         self.F_MAX = self.MASS * 9.81 + self.MASS * 0.6 # 
         # number of chebychev basisfunctions or fourier series terms
-        self.N = 6
+        self.N = 5
         # end time of the trajectory
         self.T_END = 1
         # omega for fourier series
         self.omega = 2*np.pi / self.T_END
         # number of points in the trajectory
-        self.N_POINTS = 200
+        self.N_POINTS = 100
         #number of trajectories sampled
         self.N_TRAJECTORIES = 100
         self.T_SPACED = np.linspace(0, self.T_END, self.N_POINTS)
@@ -282,8 +282,8 @@ class EmpowermentAviary(BaseRLAviary):
         # print("current position: ", state[0:3])
         #print("current empowerment: ", empowerment)
         # reduce reward if drone is too tilted
-        if abs(state[7]) > .9 or abs(state[8]) > .9:
-            reward += -1
+        # if abs(state[7]) > .9 or abs(state[8]) > .9:
+        #     reward += -1
         # if empowerment < 0:
         #     return reward - empowerment
         return (reward) * (empowerment)
@@ -563,6 +563,9 @@ class EmpowermentAviary(BaseRLAviary):
         #check if the drone is colliding with the ground
         if(state[2] <= 0.05):
             print("Terminated due to collision with ground")
+            return True
+        if abs(state[7]) > .9 or abs(state[8]) > .9:
+            print("Terminated because drone is too tilted")
             return True
         p.performCollisionDetection()
         #check if the final position is inside an obstacle

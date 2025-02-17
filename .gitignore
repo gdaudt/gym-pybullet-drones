@@ -287,6 +287,9 @@ acs-*.bib
 # mp4
 *.mp4
 
+# read npz
+read_npz.py
+
 # hyperref
 *.brf
 
@@ -441,3 +444,4 @@ TSWLatexianTemp*
 #*Notes.bib
 gym_pybullet_drones/examples/drone_0.csv
 gym_pybullet_drones/examples/animation_fastrotate.mp4
+gym_pybullet_drones/examples/read_npz.py
