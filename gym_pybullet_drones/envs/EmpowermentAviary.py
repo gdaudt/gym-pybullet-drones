@@ -286,6 +286,7 @@ class EmpowermentAviary(BaseRLAviary):
         #     reward += -1
         # if empowerment < 0:
         #     return reward - empowerment
+        #print("Reward: ", reward * empowerment)
         return (reward) * (empowerment)
         #return reward
 
@@ -352,7 +353,11 @@ class EmpowermentAviary(BaseRLAviary):
                     final_points = np.vstack((final_points, [final_points[-1][0], final_points[-1][1], final_points[-1][2], final_points[-1][3]]))
                 else:
                     final_points = np.vstack((final_points, [final_points[-1][0], final_points[-1][1], final_points[-1][2]]))
-            hull = ConvexHull(final_points)
+            if self.ACT_TYPE == ActionType.TWO_D_PID:
+                hull = ConvexHull(final_points[:, 0:2])
+            else:
+                hull = ConvexHull(final_points)
+            #print("initial hull volume: ", hull.volume)
             # also calculate the hull for each of the created components
             #print("initial hull volume: ", hull.volume)
             for i, component in enumerate(components.values()):
@@ -371,11 +376,14 @@ class EmpowermentAviary(BaseRLAviary):
                     else:
                         component = np.vstack((component, [component[-1][0], component[-1][1], component[-1][2]]))
                         #component[i].add([component[-1][0], component[-1][1], 1.05])
-                c_hull = ConvexHull(component)
+                if self.ACT_TYPE == ActionType.TWO_D_PID:
+                    c_hull = ConvexHull(component[:, 0:2])
+                else:
+                    c_hull = ConvexHull(component)
                 # subtract the volume of the component hull from the total hull volume
                 hull.volume -= c_hull.volume
-            #     print("subtracted hull volume: ", c_hull.volume)
-            # print("end hull volume: ", hull.volume)
+                #print("subtracted hull volume: ", c_hull.volume)
+            #print("end hull volume: ", hull.volume)
             empowerment = np.log(hull.volume)
             return empowerment        
         return 0.0
