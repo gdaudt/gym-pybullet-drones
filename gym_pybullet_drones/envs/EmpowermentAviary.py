@@ -24,6 +24,7 @@ class EmpowermentAviary(BaseRLAviary):
                  ctrl_freq: int = 30,
                  gui=False,
                  record=False,
+                 eval_set=None,
                  obs: ObservationType=ObservationType.KIN,
                  act: ActionType=ActionType.PID,
                  num_rays: int = 180,
@@ -58,6 +59,10 @@ class EmpowermentAviary(BaseRLAviary):
             The type of observation space (kinematic information or vision)
         act : ActionType, optional
             The type of action space (1 or 3D; RPMS, thurst and torques, or waypoint with PID control)
+        eval_set : array, optional
+            The evaluation set of starting points, obstacle positions and target positions. Stritcly structured for the box environment for now  
+            current structure is startx, y, starty, goalx, goaly 
+        
 
         """
         self.TARGET_POS = np.array([3, 0, 1])
@@ -84,10 +89,19 @@ class EmpowermentAviary(BaseRLAviary):
         self.LIDAR_MAX_RANGE = max_range
         self.lidar_angles = np.linspace(0, lidar_angle, num_rays, endpoint=False)
         
+        self.eval_set = eval_set
+        print("Eval set IN CLASS: ", self.eval_set)
         # randomization flags
-        self.RANDOMIZE_START = True
-        self.RANDOMIZE_END = True
-        self.RANDOMIZE_OBSTACLES = True
+        if self.eval_set is not None:
+            self.RANDOMIZE_START = False
+            self.RANDOMIZE_END = False
+            self.RANDOMIZE_OBSTACLES = False
+        else:
+            self.RANDOMIZE_START = True
+            self.RANDOMIZE_END = True
+            self.RANDOMIZE_OBSTACLES = True
+        
+        
         
         
         # mode of trajectory sampling
@@ -126,7 +140,7 @@ class EmpowermentAviary(BaseRLAviary):
 ####################################################################
 
     #add obstacles to the environment
-    def _addObstacles(self):
+    def _addObstacles(self, seed = None):
         
         #[up+-down, left+-right, z]
         z = 1.05
@@ -137,6 +151,9 @@ class EmpowermentAviary(BaseRLAviary):
             #randomize the y position of the obstacles, within a range of 0.3 to -1
             y_pos = round(random.uniform(-1, 0.3), 2)
             #print("spawning obstacle at y: ", y_pos)
+            obstacles = [[1, y_pos, z], [2, y_pos, z]]
+        elif self.eval_set is not None and seed is not None:
+            y_pos = self.eval_set['y'][seed]
             obstacles = [[1, y_pos, z], [2, y_pos, z]]
         else:
             obstacles= ([[1, 0, z], [2, 0, z]])
@@ -181,7 +198,19 @@ class EmpowermentAviary(BaseRLAviary):
             y_pos = round(random.uniform(-1.6, 0.4), 2)
             z_pos = 1
             self.TARGET_POS = np.array([x_pos, y_pos, z_pos])
-            print("target drone at x: ", x_pos, " y: ", y_pos)        
+            print("target drone at x: ", x_pos, " y: ", y_pos)
+        if self.eval_set is not None and seed is not None:
+            # use the seed value as the key to the eval_set dictionary
+            x_pos = self.eval_set['startx'][seed]
+            y_pos = self.eval_set['starty'][seed]
+            z_pos = 0.2
+            self.INIT_XYZS = np.array([[x_pos, y_pos, z_pos]])
+            print("starting drone at x: ", x_pos, " y: ", y_pos)
+            x_pos = self.eval_set['goalx'][seed]
+            y_pos = self.eval_set['goaly'][seed]
+            z_pos = 1
+            self.TARGET_POS = np.array([x_pos, y_pos, z_pos])
+            print("target drone at x: ", x_pos, " y: ", y_pos)
         initial_obs, initial_info = super().reset(seed, options)        
         #self.reset_lidar()
         #print("Initial observation: ", initial_obs)

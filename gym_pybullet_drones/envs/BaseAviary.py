@@ -244,7 +244,7 @@ class BaseAviary(gym.Env):
 
         p.resetSimulation(physicsClientId=self.CLIENT)
         #### Housekeeping ##########################################
-        self._housekeeping()
+        self._housekeeping(seed)
         #### Update and store the drones kinematic information #####
         self._updateAndStoreKinematicInformation()
         #### Start video recording #################################
@@ -448,7 +448,7 @@ class BaseAviary(gym.Env):
     
     ################################################################################
 
-    def _housekeeping(self):
+    def _housekeeping(self, seed = None):
         """Housekeeping function.
 
         Allocation and zero-ing of the variables and PyBullet's parameters/objects
@@ -502,7 +502,7 @@ class BaseAviary(gym.Env):
         # for i in range(self.NUM_DRONES):
             # p.setCollisionFilterPair(bodyUniqueIdA=self.PLANE_ID, bodyUniqueIdB=self.DRONE_IDS[i], linkIndexA=-1, linkIndexB=-1, enableCollision=0, physicsClientId=self.CLIENT)
         if self.OBSTACLES:
-            self._addObstacles()
+            self._addObstacles(seed)
     
     ################################################################################
 

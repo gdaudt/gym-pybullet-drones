@@ -4,6 +4,7 @@ from datetime import datetime
 import argparse
 import gymnasium as gym
 import numpy as np
+import pandas as pd
 import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
@@ -27,7 +28,7 @@ DEFAULT_AGENTS = 2
 DEFAULT_MA = False
 
 
-def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, checkpoint=None, checkpoint_folder=None, filename=None):
+def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, checkpoint=None, checkpoint_folder=None, filename=None, eval_set=None):
     
     csvfilename = filename + '.csv'
     filename = os.path.join(output_folder, filename)       
@@ -44,15 +45,22 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         path = filename+'/best_model.zip'
     else:
         print("[ERROR]: no model under the specified path", filename)
+
     model = PPO.load(path)
+
+    if eval_set is not None:
+        print("Evaluating on ", eval_set)
+        environment_set = pd.read_csv(eval_set)
+        print(environment_set)
 
     #### Show (and record a video of) the model's performance ##
     if not multiagent:
         test_env = EmpowermentAviary(gui=gui,
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
-                               record=record_video)
-        test_env_nogui = EmpowermentAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT)
+                               record=record_video,
+                               eval_set=environment_set)
+        test_env_nogui = EmpowermentAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, eval_set=environment_set)
     else:
         test_env = MultiEmpowermentAviary(gui=gui,
                                         num_drones=DEFAULT_AGENTS,
@@ -74,12 +82,19 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                               )
     print("\n\n\nMean reward ", mean_reward, " +- ", std_reward, "\n\n")
     
-    obs, info = test_env.reset(seed=42, options={})
+    eval_counter = 0
+    obs, info = test_env.reset(seed=eval_counter, options={})
+    
+        
+        
+        
     #print obs for debugging
     start = time.time()
     with open(csvfilename, 'a') as f:
         f.write('time,x,y,z,vx,vy,vz\n')
-    for i in range((test_env.EPISODE_LEN_SEC+2)*test_env.CTRL_FREQ):
+    while True:
+        #add a counter for time to the csv file
+        i = time.time() - start
         action, _states = model.predict(obs,
                                         deterministic=True
                                         )
@@ -116,7 +131,15 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         print(terminated)
         sync(i, start, test_env.CTRL_TIMESTEP)
         if terminated:
-            obs = test_env.reset(seed=42, options={})
+            eval_counter += 1
+            if eval_counter >= environment_set.shape[0]:
+                break
+            obs, info = test_env.reset(seed=eval_counter, options={})
+        if truncated:
+            eval_counter += 1
+            if eval_counter >= environment_set.shape[0]:
+                break
+            obs, info = test_env.reset(seed=eval_counter, options={})        
     test_env.close()
 
     if plot and DEFAULT_OBS == ObservationType.KIN or DEFAULT_OBS == ObservationType.KINLID:
@@ -136,6 +159,8 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint',         default=None,                  type=str,           help='Path to checkpoint file for resuming training from the checkpoint_folder', metavar='')
     # add argument for name of file to save the model
     parser.add_argument('--filename',           default=None,                  type=str,           help='Name of the file to evaluate the model', metavar='')
+    # add argument for the name of the file of the evaluation set used
+    parser.add_argument('--eval_set',           default=None,                  type=str,           help='Name of the file of the evaluation set used', metavar='')
     ARGS = parser.parse_args()
 
     run(**vars(ARGS))
