@@ -29,7 +29,8 @@ class EmpowermentAviary(BaseRLAviary):
                  act: ActionType=ActionType.PID,
                  num_rays: int = 180,
                  lidar_angle: float = 2*np.pi,
-                 max_range: float = 3.0
+                 max_range: float = 3.0,
+                 seed = None
                  ):
         """Initialization of a single or multi-agent RL environment.
 
@@ -83,6 +84,7 @@ class EmpowermentAviary(BaseRLAviary):
         self.createObstacleLookup = True
         self.obstacleLookup = {}
         self.ndeg = np.pi/2
+        self.seed = seed
         
         self.LIDAR_NUM_RAYS = num_rays
         self.LIDAR_ANGLE = lidar_angle
@@ -90,9 +92,15 @@ class EmpowermentAviary(BaseRLAviary):
         self.lidar_angles = np.linspace(0, lidar_angle, num_rays, endpoint=False)
         
         self.eval_set = eval_set
-        print("Eval set IN CLASS: ", self.eval_set)
+        
+        self.eval_y = 0
+        
         # randomization flags
         if self.eval_set is not None:
+            self.RANDOMIZE_START = False
+            self.RANDOMIZE_END = False
+            self.RANDOMIZE_OBSTACLES = False
+        elif self.seed == 1337:
             self.RANDOMIZE_START = False
             self.RANDOMIZE_END = False
             self.RANDOMIZE_OBSTACLES = False
@@ -152,11 +160,18 @@ class EmpowermentAviary(BaseRLAviary):
             y_pos = round(random.uniform(-1, 0.3), 2)
             #print("spawning obstacle at y: ", y_pos)
             obstacles = [[1, y_pos, z], [2, y_pos, z]]
+        elif self.seed == 1337:
+            #print("SPAWNING FIXED OBSTACLE FOR EVALUATION CALLBACK")
+            y_pos = round(random.uniform(-1.1, 0.1), 2)
+            self.eval_y = y_pos
+            obstacles= ([[1, y_pos, z], [2, y_pos, z]])
         elif self.eval_set is not None and seed is not None:
             y_pos = self.eval_set['y'][seed]
             obstacles = [[1, y_pos, z], [2, y_pos, z]]
         else:
-            obstacles= ([[1, 0, z], [2, 0, z]])
+            obstacles = [[1, 0, z], [2, 0, z]]
+        #check for fixed seed for evaluation
+        print("spawning obstacles at: ", obstacles)
         obstacles.extend(outer_walls)
         xoffset = 0.5
         yoffset = 0.25
@@ -187,9 +202,9 @@ class EmpowermentAviary(BaseRLAviary):
     def reset(self, seed = None, options = None):
         if self.RANDOMIZE_START:
             # choose a random y and x starting positions for the drone
-            x_pos = round(random.uniform(-0.3, 0.3), 2)
+            x_pos = round(random.uniform(-0.3, 0), 2)
             y_pos = round(random.uniform(-1.6, 0.4), 2)
-            z_pos = 0.2
+            z_pos = 1
             self.INIT_XYZS = np.array([[x_pos, y_pos, z_pos]])
             print("starting drone at x: ", x_pos, " y: ", y_pos)
         if self.RANDOMIZE_END:
@@ -203,7 +218,7 @@ class EmpowermentAviary(BaseRLAviary):
             # use the seed value as the key to the eval_set dictionary
             x_pos = self.eval_set['startx'][seed]
             y_pos = self.eval_set['starty'][seed]
-            z_pos = 0.2
+            z_pos = 1
             self.INIT_XYZS = np.array([[x_pos, y_pos, z_pos]])
             print("starting drone at x: ", x_pos, " y: ", y_pos)
             x_pos = self.eval_set['goalx'][seed]
@@ -211,6 +226,19 @@ class EmpowermentAviary(BaseRLAviary):
             z_pos = 1
             self.TARGET_POS = np.array([x_pos, y_pos, z_pos])
             print("target drone at x: ", x_pos, " y: ", y_pos)
+        if self.seed == 1337:
+            #print("SPAWNING DRONE AT FIXED POSITION FOR EVALUATION CALLBACK")
+            x_pos = round(random.uniform(-0.3, 0), 2)
+            y_pos = random.uniform(self.eval_y - 0.3, self.eval_y + 0.3)
+            self.INIT_XYZS = np.array([[x_pos, y_pos, 1]])
+            goalx = round(random.uniform(2.7, 3.9), 2)
+            if self.eval_y > -0.5:
+                goaly = self.eval_y + 0.5
+            else:
+                goaly = self.eval_y - 0.5
+            self.TARGET_POS = np.array([goalx, goaly, 1])
+            print("starting drone at x: ", 0, " y: ", 0)
+            print("target drone at x: ", 3.5, " y: ", 0)
         initial_obs, initial_info = super().reset(seed, options)        
         #self.reset_lidar()
         #print("Initial observation: ", initial_obs)
@@ -311,10 +339,8 @@ class EmpowermentAviary(BaseRLAviary):
         # print("current position: ", state[0:3])
         #print("current empowerment: ", empowerment)
         # reduce reward if drone is too tilted
-        # if abs(state[7]) > .9 or abs(state[8]) > .9:
-        #     reward += -1
-        # if empowerment < 0:
-        #     return reward - empowerment
+        # if abs(state[7]) > .5 or abs(state[8]) > .5:
+        #     reward += -1        
         #print("Reward: ", reward * empowerment)
         return (reward) * (empowerment)
         #return reward
@@ -601,9 +627,9 @@ class EmpowermentAviary(BaseRLAviary):
         if(state[2] <= 0.05):
             print("Terminated due to collision with ground")
             return True
-        if abs(state[7]) > .9 or abs(state[8]) > .9:
-            print("Terminated because drone is too tilted")
-            return True
+        # if abs(state[7]) > .9 or abs(state[8]) > .9:
+        #     print("Terminated because drone is too tilted")
+        #     return True
         p.performCollisionDetection()
         #check if the final position is inside an obstacle
         for obstacle_id in self.obstacleLookup:
@@ -638,8 +664,8 @@ class EmpowermentAviary(BaseRLAviary):
         # ):
         #     print("Truncated because drone is too far away")
         #     return True
-        # if (abs(state[7]) > .9 or abs(state[8]) > .9):# Truncate when the drone is too tilted)            
-            
+        if (abs(state[7]) > .9 or abs(state[8]) > .9):# Truncate when the drone is too tilted)            
+            return True    
         if self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC:
             print("Truncated because episode length exceeded")
             return True
