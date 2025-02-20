@@ -161,17 +161,15 @@ class EmpowermentAviary(BaseRLAviary):
             #print("spawning obstacle at y: ", y_pos)
             obstacles = [[1, y_pos, z], [2, y_pos, z]]
         elif self.seed == 1337:
-            #print("SPAWNING FIXED OBSTACLE FOR EVALUATION CALLBACK")
-            y_pos = round(random.uniform(-1.1, 0.1), 2)
-            self.eval_y = y_pos
-            obstacles= ([[1, y_pos, z], [2, y_pos, z]])
+            #print("SPAWNING FIXED OBSTACLE FOR EVALUATION CALLBACK")            
+            obstacles= ([[1, self.eval_y, z], [2, self.eval_y, z]])
+            print("spawning obstacles at: ", obstacles)
         elif self.eval_set is not None and seed is not None:
             y_pos = self.eval_set['y'][seed]
             obstacles = [[1, y_pos, z], [2, y_pos, z]]
         else:
             obstacles = [[1, 0, z], [2, 0, z]]
         #check for fixed seed for evaluation
-        print("spawning obstacles at: ", obstacles)
         obstacles.extend(outer_walls)
         xoffset = 0.5
         yoffset = 0.25
@@ -206,28 +204,29 @@ class EmpowermentAviary(BaseRLAviary):
             y_pos = round(random.uniform(-1.6, 0.4), 2)
             z_pos = 1
             self.INIT_XYZS = np.array([[x_pos, y_pos, z_pos]])
-            print("starting drone at x: ", x_pos, " y: ", y_pos)
+            #print("starting drone at x: ", x_pos, " y: ", y_pos)
         if self.RANDOMIZE_END:
             # choose a random y and x target position for the drone
             x_pos = round(random.uniform(2.7, 4.2), 2)
             y_pos = round(random.uniform(-1.6, 0.4), 2)
             z_pos = 1
             self.TARGET_POS = np.array([x_pos, y_pos, z_pos])
-            print("target drone at x: ", x_pos, " y: ", y_pos)
+            #print("target drone at x: ", x_pos, " y: ", y_pos)
         if self.eval_set is not None and seed is not None:
             # use the seed value as the key to the eval_set dictionary
             x_pos = self.eval_set['startx'][seed]
             y_pos = self.eval_set['starty'][seed]
             z_pos = 1
             self.INIT_XYZS = np.array([[x_pos, y_pos, z_pos]])
-            print("starting drone at x: ", x_pos, " y: ", y_pos)
+            #print("starting drone at x: ", x_pos, " y: ", y_pos)
             x_pos = self.eval_set['goalx'][seed]
             y_pos = self.eval_set['goaly'][seed]
             z_pos = 1
             self.TARGET_POS = np.array([x_pos, y_pos, z_pos])
-            print("target drone at x: ", x_pos, " y: ", y_pos)
+            #print("target drone at x: ", x_pos, " y: ", y_pos)
         if self.seed == 1337:
             #print("SPAWNING DRONE AT FIXED POSITION FOR EVALUATION CALLBACK")
+            self.eval_y = round(random.uniform(-1.1, 0.1), 2)
             x_pos = round(random.uniform(-0.3, 0), 2)
             y_pos = random.uniform(self.eval_y - 0.3, self.eval_y + 0.3)
             self.INIT_XYZS = np.array([[x_pos, y_pos, 1]])
@@ -237,8 +236,8 @@ class EmpowermentAviary(BaseRLAviary):
             else:
                 goaly = self.eval_y - 0.5
             self.TARGET_POS = np.array([goalx, goaly, 1])
-            print("starting drone at x: ", 0, " y: ", 0)
-            print("target drone at x: ", 3.5, " y: ", 0)
+            print("starting drone at x: ", x_pos, " y: ", y_pos)
+            print("target drone at x: ", goalx, " y: ", goaly)
         initial_obs, initial_info = super().reset(seed, options)        
         #self.reset_lidar()
         #print("Initial observation: ", initial_obs)
@@ -332,8 +331,11 @@ class EmpowermentAviary(BaseRLAviary):
 
         """        
         state = self._getDroneStateVector(0)
-        ret = np.linalg.norm(state[0:3]-self.TARGET_POS, axis=-1)
-        reward = np.exp(-ret)
+        if self.ACT_TYPE == ActionType.TWO_D_PID:
+            ret = np.linalg.norm(state[0:2]-self.TARGET_POS[0:2], axis=-1)
+        else:
+            ret = np.linalg.norm(state[0:3]-self.TARGET_POS, axis=-1)        
+        reward = np.exp(-ret)        
         empowerment = self._computeEmpowerment(state)
         # print("current velocity: ", state[10:13])
         # print("current position: ", state[0:3])
@@ -342,7 +344,9 @@ class EmpowermentAviary(BaseRLAviary):
         # if abs(state[7]) > .5 or abs(state[8]) > .5:
         #     reward += -1        
         #print("Reward: ", reward * empowerment)
-        return (reward) * (empowerment)
+        reward = reward * empowerment
+        return reward
+        #return (reward) * (empowerment)
         #return reward
 
 ####################################################################

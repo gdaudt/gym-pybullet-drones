@@ -26,6 +26,8 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold, BaseCallback, CallbackList
 from stable_baselines3.common.evaluation import evaluate_policy
+# import the monitor wrapping class
+from stable_baselines3.common.monitor import Monitor
 
 from gym_pybullet_drones.utils.Logger import Logger
 from gym_pybullet_drones.envs.EmpowermentAviary import EmpowermentAviary
@@ -68,7 +70,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                  n_envs=1,
                                  seed=0
                                  )
-        eval_env = EmpowermentAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT)
+        eval_env = Monitor(EmpowermentAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, seed=1337, gui=False))
     else:
         train_env = make_vec_env(MultiEmpowermentAviary,
                                  env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT),
@@ -93,6 +95,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         os.makedirs(filename+'/')
     
     print("Filename: ", filename)
+    
+    policy_kwargs = dict(
+    net_arch=[dict(pi=[2048, 512], vf=[2048, 512])]
+)
         
     if checkpoint and os.path.isfile(os.path.join(filename, checkpoint)):
         print(f"[INFO] Resuming training from checkpoint {checkpoint}")
@@ -102,8 +108,12 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #### Train the model #######################################
         model = PPO('MlpPolicy',
                     train_env,
+                    policy_kwargs=policy_kwargs,
                     # tensorboard_log=filename+'/tb/',
-                    verbose=1)
+                    verbose=1,
+                    learning_rate=3e-7,
+                    use_sde=True)
+        print("model.policy", model.policy)
 
     checkpoint_path = os.path.join(filename, "checkpoints")
     
@@ -127,7 +137,8 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                  render=False)
     callback_list = CallbackList([checkpoint_callback, eval_callback])
     
-    model.learn(total_timesteps=int(1e6) if local else int(1e2), # shorter training in GitHub Actions pytest
+    print("policy of the model: ", model.policy)
+    model.learn(total_timesteps=int(1.5e6) if local else int(1e2), # shorter training in GitHub Actions pytest
                 callback=callback_list,
                 log_interval=100)
 
